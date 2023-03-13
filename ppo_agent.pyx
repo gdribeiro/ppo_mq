@@ -8,6 +8,9 @@ import numpy as np
 import csv
 import tensorflow as tf
 
+from cpython cimport array
+
+
 from tf_agents.agents.ppo import ppo_clip_agent
 from tf_agents.specs import tensor_spec
 from tf_agents.specs import array_spec
@@ -263,3 +266,33 @@ class PPOAgentMQ:
         #     writer = csv.writer(episode_file, delimiter=',')
         # 
         #     writer.writerow([self.episode, self.epsilon, mean_squared_reward])
+
+
+
+##########################################################################################
+# Cython API
+##########################################################################################
+
+cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
+    state = []
+    for i in range(8):
+        state.append(start_state[i])
+    
+    return PPOAgentMQ(state, qosmax, qosmin)
+
+
+cdef public int infer(object agent , float* observation):
+    state = []
+    for i in range(8):
+        state.append(observation[i])
+
+    action = agent.step(state)
+
+    return action
+
+cdef public void finish(object agent, float* last_state):
+    state = []
+    for i in range(8):
+        state.append(last_state[i])
+    
+    agent.finish(state)

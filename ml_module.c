@@ -18,12 +18,14 @@
 #include <inttypes.h>
 
 #include "SAQNAgent.h"
+#include "PPOAgent.h"
 #include "A3CProcesses.h"
 #include "ml_module.h"
 
 int ml_init_counts[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-#define SAQN_RUN
+// #define SAQN_RUN
+#define PPO_RUN
 
 PyObject *pmodule;
 wchar_t *program;
@@ -68,6 +70,13 @@ void ml_agent_import(const char *argv_0, int argc)
 		exit(1);
 	}
 #endif
+#ifdef PPO_RUN
+	if (PyImport_AppendInittab("PPOAgent", PyInit_PPOAgent) == -1)
+	{
+		fprintf(stderr, "Error: could not extend in-built modules table\n");
+		exit(1);
+	}
+#endif
 #ifdef A3C_RUN
 	if (PyImport_AppendInittab("A3CProcesses", PyInit_A3CProcesses) == -1)
 	{
@@ -89,6 +98,17 @@ void ml_agent_import(const char *argv_0, int argc)
 	{
 		PyErr_Print();
 		fprintf(stderr, "Error: could not import module 'SAQNAgent'\n");
+		PyMem_RawFree(program);
+		Py_Finalize();
+		exit(1);
+	}
+#endif
+#ifdef PPO_RUN
+	pmodule = PyImport_ImportModule("PPOAgent");
+	if (!pmodule)
+	{
+		PyErr_Print();
+		fprintf(stderr, "Error: could not import module 'PPOAgent'\n");
 		PyMem_RawFree(program);
 		Py_Finalize();
 		exit(1);
@@ -139,6 +159,13 @@ int ml_agent_init(int controll, float qosmin, float qosmax, int split_ipqueue_si
 		// printf("\nStarting Agent\n");
 		float start_state[8] = {0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0};
 		agent = createAgent(start_state, qosmin, qosmax);
+		if (agent == NULL)
+			return -1;
+#endif
+#ifdef PPO_RUN
+		// printf("\nStarting Agent\n");
+		float start_state[8] = {0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0};
+		agent = createPPOAgent(start_state, qosmin, qosmax);
 		if (agent == NULL)
 			return -1;
 #endif
@@ -556,6 +583,15 @@ int ml_agent_finish(int controll)
 
 		// fflush(saqn_time_csv);
 		// fclose(saqn_time_csv);
+#endif
+#ifdef PPO_RUN
+		clock_t start, end;
+
+		float last_state[8] = {0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0};
+		start = clock();
+		finish(agent, last_state);
+		end = clock();
+		double cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 #endif
 #ifdef A3C_RUN
 		parameter_server_kill(p_server);

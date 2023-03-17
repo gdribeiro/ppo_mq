@@ -5,11 +5,9 @@
 ##########################################################################################
 import tensorflow as tf
 import numpy as np
-import csv
 import tensorflow as tf
 
-from cpython cimport array
-
+import tensorflow_probability as tfp
 
 from tf_agents.agents.ppo import ppo_clip_agent
 from tf_agents.specs import tensor_spec
@@ -19,19 +17,23 @@ from tf_agents.specs import TensorSpec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 
-import tensorflow_probability as tfp
-
 from tf_agents.networks import value_network
 from tf_agents.networks import actor_distribution_network
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import py_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
-
 from tf_agents.environments import py_environment
 
-LOGS_DIR =  '/tmp/ppo_logs'
-CSVFILENAME = LOGS_DIR + "/episodes.log"
+from cpython cimport array
+import csv
+
+# TESTS
+import random
+
+LOGS_DIR =  '/tmp/'
+CSV_FILE = LOGS_DIR + "/ppo_logs.csv"
+LOG_FILE = LOGS_DIR + "/ppo_logs.log"
 
 MODEL_NAME = 'PPO-01'
 
@@ -169,6 +171,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._rewards = 0
         self._current_time_step = None
         self._action = None
+        with open(CSV_FILE, mode='w') as logFile:
+            writer = csv.writer(logFile, delimiter=',')
+            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','lst_thpt_glo', 'lst_thpt_var', 'lst_cDELAY', 'lst_cTIMEP', 'lst_RecSparkTotal', 'lst_RecMQTotal', 'lst_state', 'lst_mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
+
 
     def action_spec(self):
         return self._action_spec
@@ -193,24 +199,44 @@ class MqEnvironment(py_environment.PyEnvironment):
     def mq_step(self, action, state):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
+        print("R: {0}".format(reward))
         self._current_time_step = ts.transition(observation, reward=reward, discount=1.0)
         self._action = action
         return self._current_time_step
     
     def get_reward(self, observation):
-        global_avg_spark, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
         
         if lst_mem_use < self._minqos:
-            r_mem_use = -10
+            r_mem_use = -100
         elif lst_mem_use > self._maxqos:
-            r_mem_use = -10
+            r_mem_use = -100
         elif mem_use > lst_mem_use:
             r_mem_use = 10
-        r_thpt_var = thpt_var
-        reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
+
+        if cDELAY < lst_cDELAY:
+            r_cDELAY = 10
+        else:
+            r_cDELAY = -10
         
+        r_thpt_var = thpt_var * 10
+
+        if thpt_glo > lst_thpt_glo:
+            r_thpt_glo = 10
+        else:
+            r_thpt_glo = -10
+        
+        with open(CSV_FILE, mode='a+') as logFile:
+            writer = csv.writer(logFile, delimiter=',')
+            writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
+
+        rewards = np.array([r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use])
+        normalize_rewards = rewards / np.sum(rewards)
+        reward = np.sum(normalize_rewards)
+        #reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
+
         if reward < 0:
             reward = 0.0
         return tf.convert_to_tensor(reward, dtype=tf.float32)
@@ -228,6 +254,10 @@ class PPOAgentMQ:
         self.env._current_action = self._last_action
         self._last_reward = None
         self._first_exec = True
+        print("I'm PPO!")
+        with open(LOG_FILE, mode='a+') as logFile:
+            writer = logFile.writer(logFile, delimiter=',')
+            writer.writerow(['LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'])
         
     def step(self, _new_state):
       
@@ -244,14 +274,15 @@ class PPOAgentMQ:
             self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)
-        
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
+
         
         # Return action -1 because the actions are mapped to 0,1,2 need to -> 1, 0, 1
         return self._last_action.action.numpy() - 1
-
+        #return 1
 
     def finish(self, last_state):
-        pass
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
         last_action = self._last_action
@@ -262,10 +293,6 @@ class PPOAgentMQ:
         self.ppo_agent.addToBuffer(traj_batched)
 
         return 0
-        # with open(CSVFILENAME, mode='a+') as episode_file:
-        #     writer = csv.writer(episode_file, delimiter=',')
-        # 
-        #     writer.writerow([self.episode, self.epsilon, mean_squared_reward])
 
 
 
@@ -288,6 +315,8 @@ cdef public int infer(object agent , float* observation):
 
     action = agent.step(state)
 
+    #return random.randint(0, 1)
+    print("A: {0}".format(action))
     return action
 
 cdef public void finish(object agent, float* last_state):

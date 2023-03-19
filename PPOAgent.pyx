@@ -212,50 +212,29 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
         
-        if lst_mem_use < self._minqos:
-            r_mem_use = -1000
-        elif lst_mem_use > self._maxqos:
-            r_mem_use = -100 * (lst_mem_use - self._maxqos)
-        elif mem_use > lst_mem_use:
-            r_mem_use = 10 
+        
+        r_mem_use = 2*(self._minqos-mem_use) / (self._maxqos-self._minqos) +1
+
+       
+        r_thpt_glo = thpt_glo - lst_thpt_glo
+
+        r_thpt_var = thpt_var * 10
+    
+        if cDELAY < lst_cDELAY:
+            r_cDELAY = 10
         else:
-            r_mem_use = -10
-
-        # if thpt_glo > lst_thpt_glo:
-        #     r_thpt_glo = 10
-        # else:
-        #     r_thpt_glo = -10
-
-        r_thpt_var = thpt_var * 100
-        # if thpt_var > lst_thpt_var:
-        #     r_thpt_var = 10
-        # else:
-        #     r_thpt_var - 10
-
-        # if cDELAY < lst_cDELAY:
-        #     r_cDELAY = 10
-        # else:
-        #     r_cDELAY = -10
+            r_cDELAY = -10
         
-        # if cTIMEP < lst_cTIMEP:
-        #     r_cTIMEP = 10
-        # else:
-        #     r_cTIMEP = -10
+        if cTIMEP < lst_cTIMEP:
+            r_cTIMEP = 10
+        else:
+            r_cTIMEP = -10
         
-        # if RecSparkTotal > lst_RecSparkTotal:
-        #     r_RecSparkTotal = 10
-        # else:
-        #     r_RecSparkTotal = -10
 
-        # if RecMQTotal > lst_RecMQTotal:
-        #     r_RecMQTotal = 10
-        # else:
-        #     r_RecMQTotal = -10
-
-        # if state > lst_state:
-        #     r_state = 10
-        # else:
-        #     r_state = -10
+        if state > lst_state:
+            r_state = 10
+        else:
+            r_state = -10
 
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
@@ -304,7 +283,7 @@ class PPOAgentMQ:
             
         self._last_action = self.ppo_agent.getAction(current_time_step)
         with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
+            logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
 
 
         # if self.ppo_agent.ppo_agent.train_step_counter < 300:

@@ -42,6 +42,7 @@ AGGREGATE_STATS_EVERY = 20  # steps
 
 GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 3
+GLOBAL_GAMMA = 0.99
 
 # PPO Agent 
 class PPOClipped:
@@ -171,8 +172,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._rewards = 0
         self._current_time_step = None
         self._action = None
-        with open(CSV_FILE, mode='w') as logFile:
-            writer = csv.writer(logFile, delimiter=',')
+        self._discount = GLOBAL_GAMMA
+        with open(CSV_FILE, mode='w') as csvFile:
+            writer = csv.writer(csvFile)
             writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','lst_thpt_glo', 'lst_thpt_var', 'lst_cDELAY', 'lst_cTIMEP', 'lst_RecSparkTotal', 'lst_RecMQTotal', 'lst_state', 'lst_mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
 
 
@@ -200,42 +202,70 @@ class MqEnvironment(py_environment.PyEnvironment):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
         print("R: {0}".format(reward))
-        self._current_time_step = ts.transition(observation, reward=reward, discount=1.0)
+        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount)
         self._action = action
         return self._current_time_step
     
     def get_reward(self, observation):
+    # [total_throughput, thpt_variation, proc_t, sche_t, msgs_to_spark, msgs_in_gb, ready_mem, spark_thresh]
         thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
         
         if lst_mem_use < self._minqos:
-            r_mem_use = -100
+            r_mem_use = -1000
         elif lst_mem_use > self._maxqos:
-            r_mem_use = -100
+            r_mem_use = -100 * (lst_mem_use - self._maxqos)
         elif mem_use > lst_mem_use:
-            r_mem_use = 10
-
-        if cDELAY < lst_cDELAY:
-            r_cDELAY = 10
+            r_mem_use = 10 
         else:
-            r_cDELAY = -10
-        
-        r_thpt_var = thpt_var * 10
+            r_mem_use = -10
 
-        if thpt_glo > lst_thpt_glo:
-            r_thpt_glo = 10
-        else:
-            r_thpt_glo = -10
+        # if thpt_glo > lst_thpt_glo:
+        #     r_thpt_glo = 10
+        # else:
+        #     r_thpt_glo = -10
+
+        r_thpt_var = thpt_var * 100
+        # if thpt_var > lst_thpt_var:
+        #     r_thpt_var = 10
+        # else:
+        #     r_thpt_var - 10
+
+        # if cDELAY < lst_cDELAY:
+        #     r_cDELAY = 10
+        # else:
+        #     r_cDELAY = -10
         
-        with open(CSV_FILE, mode='a+') as logFile:
-            writer = csv.writer(logFile, delimiter=',')
+        # if cTIMEP < lst_cTIMEP:
+        #     r_cTIMEP = 10
+        # else:
+        #     r_cTIMEP = -10
+        
+        # if RecSparkTotal > lst_RecSparkTotal:
+        #     r_RecSparkTotal = 10
+        # else:
+        #     r_RecSparkTotal = -10
+
+        # if RecMQTotal > lst_RecMQTotal:
+        #     r_RecMQTotal = 10
+        # else:
+        #     r_RecMQTotal = -10
+
+        # if state > lst_state:
+        #     r_state = 10
+        # else:
+        #     r_state = -10
+
+
+        with open(CSV_FILE, mode='a+', newline='') as csvFile:
+            writer = csv.writer(csvFile)
             writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
 
-        rewards = np.array([r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use])
-        normalize_rewards = rewards / np.sum(rewards)
-        reward = np.sum(normalize_rewards)
-        #reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
+        # rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
+        # normalize_rewards = rewards / np.sum(rewards)
+        # reward = np.sum(normalize_rewards) * 100
+        reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
 
         if reward < 0:
             reward = 0.0
@@ -255,8 +285,8 @@ class PPOAgentMQ:
         self._last_reward = None
         self._first_exec = True
         print("I'm PPO!")
-        with open(LOG_FILE, mode='a+') as logFile:
-            writer = logFile.writer(logFile, delimiter=',')
+        with open(LOG_FILE, mode='w') as logFile:
+            writer = logFile.writer(logFile)
             writer.writerow(['LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'])
         
     def step(self, _new_state):
@@ -277,9 +307,15 @@ class PPOAgentMQ:
         with open(LOG_FILE, mode='a+') as logFile:
             logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
 
+
+        # if self.ppo_agent.ppo_agent.train_step_counter < 300:
+        #     action = random.randint(0,1)
+        # else:
+        # # Return action -1 because the actions are mapped to 0,1,2 need to -> 1, 0, 1
+        #     action = self._last_action.action.numpy() - 1
+        action = self._last_action.action.numpy() - 1
         
-        # Return action -1 because the actions are mapped to 0,1,2 need to -> 1, 0, 1
-        return self._last_action.action.numpy() - 1
+        return action
         #return 1
 
     def finish(self, last_state):
@@ -287,6 +323,9 @@ class PPOAgentMQ:
         last_time_step = self.env.current_time_step()
         last_action = self._last_action
         current_time_step = self.env.mq_step(last_action, last_state)
+
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
 
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
@@ -314,6 +353,9 @@ cdef public int infer(object agent , float* observation):
         state.append(observation[i])
 
     action = agent.step(state)
+    # action = random.randint(0,1)
+    # action = random.choices([-1, 0, 1], [0.1, 0.7, 0.2])[0]
+    # action = 0
 
     #return random.randint(0, 1)
     print("A: {0}".format(action))

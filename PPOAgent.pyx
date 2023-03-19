@@ -32,8 +32,8 @@ import csv
 import random
 
 LOGS_DIR =  '/tmp/'
-CSV_FILE = LOGS_DIR + "/ppo_logs.csv"
-LOG_FILE = LOGS_DIR + "/ppo_logs.log"
+CSV_FILE = LOGS_DIR + "/ppo_logs_01.csv"
+LOG_FILE = LOGS_DIR + "/ppo_logs_01.log"
 
 MODEL_NAME = 'PPO-01'
 
@@ -285,9 +285,8 @@ class PPOAgentMQ:
         self._last_reward = None
         self._first_exec = True
         print("I'm PPO!")
-        with open(LOG_FILE, mode='w') as logFile:
-            writer = logFile.writer(logFile)
-            writer.writerow(['LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'])
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
         
     def step(self, _new_state):
       

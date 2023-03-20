@@ -128,8 +128,9 @@ class PPOClipped:
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            data_spec= self.ppo_agent.collect_policy.trajectory_spec,
+            # data_spec= self.ppo_agent.collect_policy.trajectory_spec,
             # self.ppo_agent.policy.trajectory_spec,
+            data_spec= self.ppo_agent.collect_data_spec,
             batch_size=1,
             max_length=10000)
         return replay_buffer
@@ -139,16 +140,20 @@ class PPOClipped:
         
     def createBufferIterator(self):
         n_step_update = 10
-        # batch_size = 
+        n_step_update = 1
         batch_size = self.batch_size
         dataset = self.replay_buffer.as_dataset(
-            num_parallel_calls=3, sample_batch_size=batch_size,
-            num_steps=n_step_update + 1).prefetch(batch_size)
+            num_parallel_calls=3, 
+            sample_batch_size=batch_size,
+            # num_steps=n_step_update + 1).prefetch(batch_size)
+            # num_steps=1).prefetch(batch_size)
+            num_steps=2)
         iterator = iter(dataset)
         return iterator
 
     def train(self):
         experience, unused_info = next(self.iterator)
+        print('XP: {}\nINFO: {}'.format(experience, unused_info))
         self.ppo_agent.train(experience)
         # print('Step Counter: {0}'.format(self.train_step_counter))
 
@@ -164,7 +169,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
         self._action_spec = BoundedTensorSpec(
             shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
-        self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
+        # self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
+        self._reward_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='reward')
 
         self._maxqos = maxqos
         self._minqos = minqos
@@ -189,8 +195,9 @@ class MqEnvironment(py_environment.PyEnvironment):
     
     def _reset(self):
         observation_zeros = tf.zeros((8,), dtype=tf.float32)
-        reward = tf.convert_to_tensor(1, dtype=tf.float32)
-        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=1.0)
+        # reward = tf.convert_to_tensor(1, dtype=tf.float32)
+        reward = tf.zeros((8,), dtype=tf.float32)
+        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount, outer_dims=())
         
         return self._current_time_step
     
@@ -202,7 +209,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
         print("R: {0}".format(reward))
-        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount)
+        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount, outer_dims=())
         self._action = action
         return self._current_time_step
     
@@ -211,44 +218,27 @@ class MqEnvironment(py_environment.PyEnvironment):
         thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
-        
-        
-        r_mem_use = 2*(self._minqos-mem_use) / (self._maxqos-self._minqos) +1
-
-       
+                
+        r_mem_use = 2 * (self._minqos-mem_use) / (self._maxqos-self._minqos) +1
+     
         r_thpt_glo = thpt_glo - lst_thpt_glo
 
-        r_thpt_var = thpt_var * 10
+        r_thpt_var = thpt_var
     
-        if cDELAY < lst_cDELAY:
-            r_cDELAY = 10
-        else:
-            r_cDELAY = -10
+        r_cDELAY =  100 * (1-(cDELAY - 10) / (25000))
         
-        if cTIMEP < lst_cTIMEP:
-            r_cTIMEP = 10
-        else:
-            r_cTIMEP = -10
+        r_cTIMEP = 100 * (1-(cTIMEP - 10) / (25000))
         
-
-        if state > lst_state:
-            r_state = 10
-        else:
-            r_state = -10
+        r_state = 100 * (1-(state - 1) / (32))
 
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
             writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
 
-        # rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
-        # normalize_rewards = rewards / np.sum(rewards)
-        # reward = np.sum(normalize_rewards) * 100
-        reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
-
-        if reward < 0:
-            reward = 0.0
-        return tf.convert_to_tensor(reward, dtype=tf.float32)
+        rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
+       
+        return tf.convert_to_tensor(rewards, dtype=tf.float32)
 
 
 class PPOAgentMQ:
@@ -285,16 +275,11 @@ class PPOAgentMQ:
         with open(LOG_FILE, mode='a+') as logFile:
             logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
 
+        print(('LAST TIMESTEP: {}\nLAST ACTION: {}\nCURRENT TIMESTEP: {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy())))
 
-        # if self.ppo_agent.ppo_agent.train_step_counter < 300:
-        #     action = random.randint(0,1)
-        # else:
-        # # Return action -1 because the actions are mapped to 0,1,2 need to -> 1, 0, 1
-        #     action = self._last_action.action.numpy() - 1
         action = self._last_action.action.numpy() - 1
         
         return action
-        #return 1
 
     def finish(self, last_state):
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)
@@ -331,11 +316,7 @@ cdef public int infer(object agent , float* observation):
         state.append(observation[i])
 
     action = agent.step(state)
-    # action = random.randint(0,1)
-    # action = random.choices([-1, 0, 1], [0.1, 0.7, 0.2])[0]
-    # action = 0
 
-    #return random.randint(0, 1)
     print("A: {0}".format(action))
     return action
 

@@ -147,14 +147,20 @@ class PPOClipped:
             sample_batch_size=batch_size,
             # num_steps=n_step_update + 1).prefetch(batch_size)
             # num_steps=1).prefetch(batch_size)
-            num_steps=2)
+             num_steps=2
+        )
         iterator = iter(dataset)
         return iterator
 
     def train(self):
         experience, unused_info = next(self.iterator)
-        print('XP: {}\nINFO: {}'.format(experience, unused_info))
+        # batched_exp = tf.nest.map_structure(
+        #     lambda t: tf.expand_dims(t, axis=0),
+        #     experience
+        # )
+        # print('XP: {}\nINFO: {}'.format(experience, unused_info))
         self.ppo_agent.train(experience)
+        # self.ppo_agent.train(batched_exp)
         # print('Step Counter: {0}'.format(self.train_step_counter))
 
     def getAction(self, time_step):
@@ -181,7 +187,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._discount = GLOBAL_GAMMA
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','lst_thpt_glo', 'lst_thpt_var', 'lst_cDELAY', 'lst_cTIMEP', 'lst_RecSparkTotal', 'lst_RecMQTotal', 'lst_state', 'lst_mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
+            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
 
 
     def action_spec(self):
@@ -219,22 +225,27 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
                 
-        r_mem_use = 2 * (self._minqos-mem_use) / (self._maxqos-self._minqos) +1
+        # r_mem_use = 2 * (self._minqos-mem_use) / (self._maxqos-self._minqos) +1
+        r_mem_use = 1/mem_use
      
-        r_thpt_glo = thpt_glo - lst_thpt_glo
+        # r_thpt_glo = thpt_glo - lst_thpt_glo
+        r_thpt_glo = thpt_glo
 
         r_thpt_var = thpt_var
     
-        r_cDELAY =  100 * (1-(cDELAY - 10) / (25000))
-        
-        r_cTIMEP = 100 * (1-(cTIMEP - 10) / (25000))
-        
-        r_state = 100 * (1-(state - 1) / (32))
+        # r_cDELAY =  100 * (1-(cDELAY - 10) / (25000))
+        r_cDELAY =  1/r_cDELAY
+                
+        # r_cTIMEP = 100 * (1-(cTIMEP - 10) / (25000))
+        r_cTIMEP = 1/cTIMEP
+
+        # r_state = 100 * (1-(state - 1) / (32))
+        r_state = 1/state
 
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
+            writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
 
         rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
        
@@ -267,6 +278,7 @@ class PPOAgentMQ:
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
         self.ppo_agent.addToBuffer(traj_batched)
+        # self.ppo_agent.addToBuffer(traj)
         
         if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
             self.ppo_agent.train()

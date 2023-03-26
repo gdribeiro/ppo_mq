@@ -147,7 +147,8 @@ class PPOClipped:
             sample_batch_size=batch_size,
             # num_steps=n_step_update + 1).prefetch(batch_size)
             # num_steps=1).prefetch(batch_size)
-             num_steps=2
+             num_steps=2,
+             single_deterministic_pass=False
         )
         iterator = iter(dataset)
         return iterator
@@ -159,6 +160,10 @@ class PPOClipped:
         #     experience
         # )
         # print('XP: {}\nINFO: {}'.format(experience, unused_info))
+        print('TYPE XP: {}'.format(type(experience)))
+        print('TYPE XP[0]: {}'.format(type(experience[0])))
+        print('TYPE XP[1]: {}'.format(type(experience[1])))
+        print('XP: {}'.format(experience))
         self.ppo_agent.train(experience)
         # self.ppo_agent.train(batched_exp)
         # print('Step Counter: {0}'.format(self.train_step_counter))

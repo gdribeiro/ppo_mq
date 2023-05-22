@@ -66,7 +66,7 @@ class PPOClipped:
 
         self.ppo_agent = self.createPPOAgent()
 
-        self.batch_size = 64
+        self.batch_size = 4
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
 
@@ -123,14 +123,14 @@ class PPOClipped:
         agent_ppo.initialize()
         agent_ppo.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
-        agent_ppo.train = common.function(agent_ppo.train)
+        # agent_ppo.train = common.function(agent_ppo.train)
         return agent_ppo
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             # data_spec= self.ppo_agent.collect_policy.trajectory_spec,
             # self.ppo_agent.policy.trajectory_spec,
-            data_spec= self.ppo_agent.collect_data_spec,
+            data_spec= self.ppo_agent.collect_policy.trajectory_spec,
             batch_size=1,
             max_length=10000)
         return replay_buffer
@@ -140,14 +140,14 @@ class PPOClipped:
         
     def createBufferIterator(self):
         n_step_update = 10
-        n_step_update = 1
+        n_step_update = 3
         batch_size = self.batch_size
         dataset = self.replay_buffer.as_dataset(
             num_parallel_calls=3, 
             sample_batch_size=batch_size,
             # num_steps=n_step_update + 1).prefetch(batch_size)
             # num_steps=1).prefetch(batch_size)
-             num_steps=2,
+             num_steps=n_step_update,
              single_deterministic_pass=False
         )
         iterator = iter(dataset)
@@ -283,6 +283,7 @@ class PPOAgentMQ:
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
         self.ppo_agent.addToBuffer(traj_batched)
+        # self.ppo_agent.addToBuffer()
         # self.ppo_agent.addToBuffer(traj)
         
         if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
@@ -308,7 +309,8 @@ class PPOAgentMQ:
             logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
 
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
-        traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
+        # traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
+        traj_batched = tf.nest.flatten(traj)
         self.ppo_agent.addToBuffer(traj_batched)
 
         return 0

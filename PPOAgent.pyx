@@ -68,7 +68,7 @@ class PPOClipped:
 
         self.ppo_agent = self.createPPOAgent()
 
-        self.batch_size = 4
+        self.batch_size = 64
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
 
@@ -145,14 +145,13 @@ class PPOClipped:
         
     def createBufferIterator(self):
         n_step_update = 2
-        batch_size = self.batch_size
         dataset = self.replay_buffer.as_dataset(
             num_parallel_calls=3, 
-            # sample_batch_size=1,
+            sample_batch_size=self.batch_size,
             # num_steps=n_step_update + 1).prefetch(batch_size)
             # num_steps=1).prefetch(batch_size)
             #  num_steps=n_step_update,
-             num_steps=self.batch_size,
+            #  num_steps=self.batch_size,
              single_deterministic_pass=False
         )
         iterator = iter(dataset)
@@ -173,12 +172,13 @@ class PPOClipped:
       
         # experience = new_trajectory
         # *****
-        # expanded_data = tf.nest.map_structure(
-        #     lambda x: tf.expand_dims(x, axis=1), 
-        #     data)
 
-        # print('Training Data Spec: {}'.format(self.ppo_agent.training_data_spec))
-        # print('Buffer Data Spec: {}'.format(self.replay_buffer.data_spec))
+        # expanded_trajectory = tf.nest.map_structure(
+        #     lambda x: tf.expand_dims(x, axis=0), experience)
+        # experience = expanded_trajectory
+
+        print('Training Data Spec: {}'.format(self.ppo_agent.training_data_spec))
+        print('Buffer Data Spec: {}'.format(self.replay_buffer.data_spec))
         print('XP: {}'.format(experience))
 
         self.ppo_agent.train(experience)
@@ -198,6 +198,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._action_spec = BoundedTensorSpec(
             shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
         self._reward_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='reward')
+        self._reward_spec = BoundedTensorSpec(
+            shape=(8,), dtype=np.float32, minimum=0., maximum=1., name='discount')
 
         self._maxqos = maxqos
         self._minqos = minqos
@@ -205,7 +207,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._rewards = 0
         self._current_time_step = None
         self._action = None
-        self._discount = GLOBAL_GAMMA
+        self._discount = tf.fill((8,), GLOBAL_GAMMA, dtype=tf.float32)
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
             writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
@@ -224,7 +226,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         observation_zeros = tf.zeros((8,), dtype=tf.float32)
         # reward = tf.convert_to_tensor(1, dtype=tf.float32)
         reward = tf.zeros((8,), dtype=tf.float32)
-        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount, outer_dims=())
+        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy(), outer_dims=())
         
         return self._current_time_step
     
@@ -236,7 +238,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
         print("R: {0}".format(reward))
-        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount, outer_dims=())
+        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount.numpy(), outer_dims=())
         self._action = action
         return self._current_time_step
     
@@ -328,7 +330,7 @@ class PPOAgentMQ:
        
 
 
-        if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
+        if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size * 1000:
             self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)

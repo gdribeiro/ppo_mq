@@ -30,8 +30,6 @@ from tf_agents.environments import py_environment
 from cpython cimport array
 import csv
 
-# TESTS
-import random
 
 LOGS_DIR =  '/tmp/'
 CSV_FILE = LOGS_DIR + "/ppo_logs_01.csv"
@@ -71,6 +69,9 @@ class PPOClipped:
         self.batch_size = 64
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
+
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('Training Data Spec: {}\nBuffer Data Spec: {}\n'.format(self.ppo_agent.training_data_spec, self.replay_buffer.data_spec))
 
 
     def createActorNet(self):
@@ -124,18 +125,12 @@ class PPOClipped:
         )
         agent_ppo.initialize()
         agent_ppo.train_step_counter.assign(0)
-        # (Optional) Optimize by wrapping some of this code in a graph using TF function.
         agent_ppo.train = common.function(agent_ppo.train)
         return agent_ppo
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            # data_spec= self.ppo_agent.collect_policy.trajectory_spec,
-            # data_spec= self.ppo_agent.policy.trajectory_spec,
             data_spec= self.ppo_agent.collect_policy.trajectory_spec,
-            # data_spec= self.ppo_agent.collect_data_spec,
-            # data_spec= self.ppo_agent.policy.collect_data_spec,
-            # batch_size= self.batch_size,
             batch_size= 1,
             max_length=10000)
         return replay_buffer
@@ -144,46 +139,24 @@ class PPOClipped:
         self.replay_buffer.add_batch(traj)
         
     def createBufferIterator(self):
-        n_step_update = 2
+        n_step_update = 10
         dataset = self.replay_buffer.as_dataset(
-            num_parallel_calls=3, 
+            num_steps=n_step_update,
             sample_batch_size=self.batch_size,
-            # num_steps=n_step_update + 1).prefetch(batch_size)
-            # num_steps=1).prefetch(batch_size)
-            #  num_steps=n_step_update,
-            #  num_steps=self.batch_size,
-             single_deterministic_pass=False
-        )
+            num_parallel_calls=3, 
+            single_deterministic_pass=False
+        ).prefetch(self.batch_size)
         iterator = iter(dataset)
         return iterator
 
     def train(self):
         experience, unused_info = next(self.iterator)
         
-        # new_trajectory = Trajectory(
-        #     step_type=tf.transpose(experience.step_type, perm=[1, 0]),
-        #     observation=tf.transpose(experience.observation, perm=[1, 0, 2]),
-        #     action=tf.transpose(experience.action, perm=[1, 0]),
-        #     policy_info={k: tf.transpose(v, [1, 0, 2]) for k, v in experience.policy_info['dist_params'].items()},
-        #     next_step_type=tf.transpose(experience.next_step_type, [1, 0]),
-        #     reward=tf.transpose(experience.reward, [1, 0, 2]),
-        #     discount=tf.transpose(experience.discount, [1, 0])
-        # )
-      
-        # experience = new_trajectory
-        # *****
-
-        # expanded_trajectory = tf.nest.map_structure(
-        #     lambda x: tf.expand_dims(x, axis=0), experience)
-        # experience = expanded_trajectory
-
-        print('Training Data Spec: {}'.format(self.ppo_agent.training_data_spec))
-        print('Buffer Data Spec: {}'.format(self.replay_buffer.data_spec))
-        print('XP: {}'.format(experience))
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('XP: {}\n'.format(experience))
 
         self.ppo_agent.train(experience)
 
-        # print('Step Counter: {0}'.format(self.train_step_counter))
 
     def getAction(self, time_step):
         # return self.ppo_agent.policy.action(time_step)
@@ -224,7 +197,6 @@ class MqEnvironment(py_environment.PyEnvironment):
     
     def _reset(self):
         observation_zeros = tf.zeros((8,), dtype=tf.float32)
-        # reward = tf.convert_to_tensor(1, dtype=tf.float32)
         reward = tf.zeros((8,), dtype=tf.float32)
         self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy(), outer_dims=())
         
@@ -251,25 +223,46 @@ class MqEnvironment(py_environment.PyEnvironment):
         max_reward_value = np.finfo(np.float32).max
         # r_mem_use = 2 * (self._minqos-mem_use) / (self._maxqos-self._minqos) +1
         # r_mem_use = 1/mem_use
-        r_mem_use = min(1/mem_use, max_reward_value)
+        # r_mem_use = min(1/mem_use, max_reward_value)
+        # Calculate the midpoint between self._minqos and self._maxqos
+        mid_point = (self._minqos + self._maxqos) / 2.0
+
+        # Calculate the distance of mem_use from the midpoint
+        distance_to_mid_point = abs(mem_use - mid_point)
+
+        # Calculate the maximum possible distance from the midpoint,
+        # which would be when mem_use is either at self._minqos or self._maxqos
+        max_distance = max(self._maxqos - mid_point, mid_point - self._minqos)
+
+        # Normalize the distance to the range [0, 1]
+        normalized_distance = distance_to_mid_point / max_distance
+
+        # Set the reward to decrease as the distance increases. 
+        # It will be 1 when mem_use is at the midpoint, and decrease linearly from there.
+        r_mem_use = 1 - normalized_distance
+
+        # Finally, scale the reward to not exceed max_reward_value
+        # r_mem_use = min(r_mem_use, max_reward_value)
+
+
      
         # r_thpt_glo = thpt_glo - lst_thpt_glo
         # r_thpt_glo = thpt_glo
-        r_thpt_glo = min(thpt_glo, max_reward_value)
+        # r_thpt_glo = min(thpt_glo, max_reward_value)
 
         r_thpt_var = thpt_var
     
         # r_cDELAY =  100 * (1-(cDELAY - 10) / (25000))
         # r_cDELAY =  1/r_cDELAY
-        r_cDELAY =  min(1/cDELAY, max_reward_value)
+        # r_cDELAY =  min(1/cDELAY, max_reward_value)
                 
         # r_cTIMEP = 100 * (1-(cTIMEP - 10) / (25000))
         # r_cTIMEP = 1/cTIMEP
-        r_cTIMEP = min(1/cTIMEP, max_reward_value) 
+        # r_cTIMEP = min(1/cTIMEP, max_reward_value)
 
         # r_state = 100 * (1-(state - 1) / (32))
         # r_state = 1/state
-        r_state = min(1/state, max_reward_value)
+        # r_state = min(1/state, max_reward_value)
 
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
@@ -294,54 +287,30 @@ class PPOAgentMQ:
         self._last_reward = None
         self._first_exec = True
         print("I'm PPO!")
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
 
-
-        self.replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            data_spec= self.ppo_agent.ppo_agent.collect_data_spec,
-            batch_size= 1,
-            max_length=10000)
         
     def step(self, _new_state):
-      
         new_state = tf.convert_to_tensor(_new_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
         last_action = self._last_action
         current_time_step = self.env.mq_step(last_action, new_state)
-        
-        
-        # TODO: MAKE SURE THE SHAPES AND DATA TYPES ARE CORRECT!! 
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
-        traj = traj_batched
-        # self.ppo_agent.addToBuffer(traj_batched)
-        # self.ppo_agent.addToBuffer()
-        # print('Trajectory Type: {}'.format(type(traj))) # Trajectory of type tf.Tensor: shape=(1, 8), dtype=float32, numpy= ...
-        # print('MQEnv Step Traj: {}'.format(traj))
-        # print('PPO Collect Data Spec: {}'.format(self.ppo_agent.ppo_agent.collect_data_spec))
-        
-        # traj = [traj]
-        # traj = tf.expand_dims(traj, axis=0)
-        # self.replay_buffer.add_batch(traj)
-
+        traj = traj_batched       
         self.ppo_agent.addToBuffer(traj)
         
-       
-
-
-        if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size * 1000:
+        if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
             self.ppo_agent.train()
-            
+
         self._last_action = self.ppo_agent.getAction(current_time_step)
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
 
-        print(('LAST TIMESTEP: {}\nLAST ACTION: {}\nCURRENT TIMESTEP: {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy())))
-
-        action = self._last_action.action.numpy() - 1
-        
+        action = self._last_action.action.numpy() - 1        
         return action
+
 
     def finish(self, last_state):
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)
@@ -349,14 +318,12 @@ class PPOAgentMQ:
         last_action = self._last_action
         current_time_step = self.env.mq_step(last_action, last_state)
 
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
 
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
-        # traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
-        traj_batched = tf.nest.flatten(traj)
+        traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
         self.ppo_agent.addToBuffer(traj_batched)
-
         return 0
 
 

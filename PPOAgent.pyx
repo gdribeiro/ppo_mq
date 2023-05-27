@@ -175,8 +175,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._discount = GLOBAL_GAMMA
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','lst_thpt_glo', 'lst_thpt_var', 'lst_cDELAY', 'lst_cTIMEP', 'lst_RecSparkTotal', 'lst_RecMQTotal', 'lst_state', 'lst_mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
-
+            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','r_norm'])
 
     def action_spec(self):
         return self._action_spec
@@ -211,10 +210,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
-        
-        
+                
         r_mem_use = 2*(self._minqos-mem_use) / (self._maxqos-self._minqos) +1
-
        
         r_thpt_glo = thpt_glo - lst_thpt_glo
 
@@ -228,8 +225,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         if cTIMEP < lst_cTIMEP:
             r_cTIMEP = 10
         else:
-            r_cTIMEP = -10
-        
+            r_cTIMEP = -10    
 
         if state > lst_state:
             r_state = 10
@@ -237,17 +233,16 @@ class MqEnvironment(py_environment.PyEnvironment):
             r_state = -10
 
 
-        with open(CSV_FILE, mode='a+', newline='') as csvFile:
-            writer = csv.writer(csvFile)
-            writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
-
         # rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
         # normalize_rewards = rewards / np.sum(rewards)
         # reward = np.sum(normalize_rewards) * 100
         reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
-
         if reward < 0:
             reward = 0.0
+
+        with open(CSV_FILE, mode='a+', newline='') as csvFile:
+            writer = csv.writer(csvFile)
+            writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use, reward])
         return tf.convert_to_tensor(reward, dtype=tf.float32)
 
 

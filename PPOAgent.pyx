@@ -49,8 +49,10 @@ class PPOClipped:
 
     def __init__(self, env):
         # Constants
-        self.actor_fc_layers = (64,64)
-        self.value_fc_layers = (64,64)
+        # self.actor_fc_layers = (64,64)
+        # self.value_fc_layers = (64,64)
+        self.actor_fc_layers = (128,128,64)
+        self.value_fc_layers = (128,128,64)
         self.epsilon = GLOBAL_EPSILON
         self.epochs = GLOBAL_EPOCHS
 
@@ -171,7 +173,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._action_spec = BoundedTensorSpec(
             shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
         self._reward_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='reward')
-        self._reward_spec = BoundedTensorSpec(
+        self._discount_spec = BoundedTensorSpec(
             shape=(8,), dtype=np.float32, minimum=0., maximum=1., name='discount')
 
         self._maxqos = maxqos
@@ -227,17 +229,17 @@ class MqEnvironment(py_environment.PyEnvironment):
         # r_mem_use = 1/mem_use
         # r_mem_use = min(1/mem_use, max_reward_value)
         # Calculate the midpoint between self._minqos and self._maxqos
-        mid_point = (self._minqos + self._maxqos) / 2.0
+        # mid_point = (self._minqos + self._maxqos) / 2.0
 
         # Calculate the distance of mem_use from the midpoint
-        distance_to_mid_point = abs(mem_use - mid_point)
+        # distance_to_mid_point = abs(mem_use - mid_point)
 
         # Calculate the maximum possible distance from the midpoint,
         # which would be when mem_use is either at self._minqos or self._maxqos
-        max_distance = max(self._maxqos - mid_point, mid_point - self._minqos)
+        # max_distance = max(self._maxqos - mid_point, mid_point - self._minqos)
 
         # Normalize the distance to the range [0, 1]
-        normalized_distance = distance_to_mid_point / max_distance
+        # normalized_distance = distance_to_mid_point / max_distance
 
         # Set the reward to decrease as the distance increases. 
         # It will be 1 when mem_use is at the midpoint, and decrease linearly from there.
@@ -245,18 +247,21 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         # Finally, scale the reward to not exceed max_reward_value
         # r_mem_use = min(r_mem_use, max_reward_value)
-
+        r_mem_use = 2 * (self.maxqos - mem_use) / (self.maxqos - self.minqos) -1 
 
      
         # r_thpt_glo = thpt_glo - lst_thpt_glo
         # r_thpt_glo = thpt_glo
         # r_thpt_glo = min(thpt_glo, max_reward_value)
+        r_thpt_glo = 2 * (thpt_glo - 0) / (2400 - 0) -1 
 
-        r_thpt_var = thpt_var
+        # r_thpt_var = thpt_var
+
     
         # r_cDELAY =  100 * (1-(cDELAY - 10) / (25000))
         # r_cDELAY =  1/r_cDELAY
         # r_cDELAY =  min(1/cDELAY, max_reward_value)
+        r_cDELAY =2 * ((20000 - cDELAY) / (20000)) -1
                 
         # r_cTIMEP = 100 * (1-(cTIMEP - 10) / (25000))
         # r_cTIMEP = 1/cTIMEP

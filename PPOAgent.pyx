@@ -198,7 +198,8 @@ class MqEnvironment(py_environment.PyEnvironment):
     def _reset(self):
         observation_zeros = tf.zeros((8,), dtype=tf.float32)
         reward = tf.zeros((8,), dtype=tf.float32)
-        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy(), outer_dims=())
+        # self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy(), outer_dims=())
+        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy())
         
         return self._current_time_step
     
@@ -210,7 +211,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
         print("R: {0}".format(reward))
-        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount.numpy(), outer_dims=())
+        # self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount.numpy(), outer_dims=())
+        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount.numpy())
         self._action = action
         return self._current_time_step
     
@@ -239,7 +241,7 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         # Set the reward to decrease as the distance increases. 
         # It will be 1 when mem_use is at the midpoint, and decrease linearly from there.
-        r_mem_use = 1 - normalized_distance
+        # r_mem_use = 1 - normalized_distance
 
         # Finally, scale the reward to not exceed max_reward_value
         # r_mem_use = min(r_mem_use, max_reward_value)

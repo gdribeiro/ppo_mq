@@ -30,6 +30,8 @@ from tf_agents.environments import py_environment
 from cpython cimport array
 import csv
 
+# TESTS
+import random
 
 LOGS_DIR =  '/tmp/'
 CSV_FILE = LOGS_DIR + "/ppo_logs_01.csv"
@@ -353,6 +355,7 @@ cdef public int infer(object agent , float* observation):
         state.append(observation[i])
 
     action = agent.step(state)
+    action = random.choices([-1, 0, 1], [0.1, 0.2, 0.9])[0]
 
     print("A: {0}".format(action))
     return action

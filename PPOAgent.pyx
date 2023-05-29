@@ -1,4 +1,5 @@
 #!./venv/bin/python3
+# cython: language_level=3
 
 ##########################################################################################
 # PPO Imports
@@ -41,7 +42,7 @@ MODEL_NAME = 'PPO-01'
 AGGREGATE_STATS_EVERY = 20  # steps
 
 GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 3
+GLOBAL_EPOCHS = 10       #3
 GLOBAL_GAMMA = 0.99
 
 # PPO Agent 
@@ -138,17 +139,20 @@ class PPOClipped:
         self.replay_buffer.add_batch(traj)
         
     def createBufferIterator(self):
-        n_step_update = 10
-        # batch_size = 
+        n_step_update = 2
         batch_size = self.batch_size
         dataset = self.replay_buffer.as_dataset(
-            num_parallel_calls=3, sample_batch_size=batch_size,
-            num_steps=n_step_update + 1).prefetch(batch_size)
+            num_steps=n_step_update,
+            num_parallel_calls=3,
+            sample_batch_size=batch_size
+            ).prefetch(batch_size)
         iterator = iter(dataset)
         return iterator
 
     def train(self):
         experience, unused_info = next(self.iterator)
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('{}\n'.format(experience))
         self.ppo_agent.train(experience)
         # print('Step Counter: {0}'.format(self.train_step_counter))
 
@@ -211,32 +215,43 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
                 
-        r_mem_use = 2*(self._minqos-mem_use) / (self._maxqos-self._minqos) +1
+        # r_mem_use = 2*(self._minqos-mem_use) / (self._maxqos-self._minqos) +1
        
-        r_thpt_glo = thpt_glo - lst_thpt_glo
+        # r_thpt_glo = thpt_glo - lst_thpt_glo
 
-        r_thpt_var = thpt_var * 10
+        # r_thpt_var = thpt_var * 10
     
-        if cDELAY < lst_cDELAY:
-            r_cDELAY = 10
-        else:
-            r_cDELAY = -10
+        # if cDELAY < lst_cDELAY:
+        #     r_cDELAY = 10
+        # else:
+        #     r_cDELAY = -10
         
-        if cTIMEP < lst_cTIMEP:
-            r_cTIMEP = 10
-        else:
-            r_cTIMEP = -10    
+        # if cTIMEP < lst_cTIMEP:
+        #     r_cTIMEP = 10
+        # else:
+        #     r_cTIMEP = -10    
 
-        if state > lst_state:
-            r_state = 10
-        else:
-            r_state = -10
+        # if state > lst_state:
+        #     r_state = 10
+        # else:
+        #     r_state = -10
+
+
+        # r_mem_use = 2 * (self._maxqos - mem_use) / (self._maxqos - self._minqos) -1 # range -1, 1
+        r_mem_use = (self._maxqos - mem_use) / (self._maxqos - self._minqos)    # range 0, 1
+        # r_thpt_glo = 2 * (thpt_glo - 0) / (2400 - 0) -1 # range -1, 1
+        r_thpt_glo = thpt_glo /2400
+        # r_cDELAY =2 * ((20000 - cDELAY) / (20000)) -1 # ragen -1, 1
+        r_cDELAY = (20000 - cDELAY) / (20000)
 
 
         # rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
         # normalize_rewards = rewards / np.sum(rewards)
         # reward = np.sum(normalize_rewards) * 100
-        reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
+        # reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
+        # reward = (r_mem_use * r_thpt_glo * r_cDELAY) / (r_mem_use + r_thpt_glo + r_cDELAY)
+        reward = (r_mem_use * r_thpt_glo * r_cDELAY)
+        
         if reward < 0:
             reward = 0.0
 
@@ -258,9 +273,9 @@ class PPOAgentMQ:
         self.env._current_action = self._last_action
         self._last_reward = None
         self._first_exec = True
-        print("I'm PPO!")
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
+        # print("I'm PPO!")
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
         
     def step(self, _new_state):
       
@@ -273,12 +288,13 @@ class PPOAgentMQ:
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
         self.ppo_agent.addToBuffer(traj_batched)
         
-        if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
+        # if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
+        if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size/2)):
             self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
 
 
         # if self.ppo_agent.ppo_agent.train_step_counter < 300:
@@ -297,8 +313,8 @@ class PPOAgentMQ:
         last_action = self._last_action
         current_time_step = self.env.mq_step(last_action, last_state)
 
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
 
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)

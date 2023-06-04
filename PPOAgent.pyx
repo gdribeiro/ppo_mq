@@ -113,7 +113,9 @@ class PPOClipped:
             action_spec=self.action_tensor_spec,
             optimizer=self.optimizer,
             normalize_observations=True,
+            # normalize_observations=False,
             normalize_rewards=True,
+            # normalize_rewards=False,
             actor_net=self.actor_net,
             value_net=self.value_net,
             importance_ratio_clipping=self.epsilon,
@@ -139,7 +141,7 @@ class PPOClipped:
         self.replay_buffer.add_batch(traj)
         
     def createBufferIterator(self):
-        n_step_update = 2
+        n_step_update = 10
         batch_size = self.batch_size
         dataset = self.replay_buffer.as_dataset(
             num_steps=n_step_update,
@@ -181,6 +183,10 @@ class MqEnvironment(py_environment.PyEnvironment):
             writer = csv.writer(csvFile)
             writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','r_norm'])
 
+        self._max_thpt = 100
+        self._max_cDELAY = 20000
+        self._max_cTIMEP = 10000
+
     def action_spec(self):
         return self._action_spec
 
@@ -215,45 +221,45 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
                 
-        # r_mem_use = 2*(self._minqos-mem_use) / (self._maxqos-self._minqos) +1
-       
-        # r_thpt_glo = thpt_glo - lst_thpt_glo
+        # MEMORY USED
+        if mem_use > self._maxqos:
+            r_mem_use = 0.0
+        else:
+            r_mem_use = (np.exp(5*mem_use) - self._maxqos) / (self._maxqos - self._minqos)
+            r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
 
-        # r_thpt_var = thpt_var * 10
-    
-        # if cDELAY < lst_cDELAY:
-        #     r_cDELAY = 10
-        # else:
-        #     r_cDELAY = -10
+        # STATE
+        if state > self._maxqos:
+            r_state = 0.0
+        else:
+            r_state = (np.exp(5*r_state) - self._maxqos) / (self._maxqos - self._minqos)
+            r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
         
-        # if cTIMEP < lst_cTIMEP:
-        #     r_cTIMEP = 10
-        # else:
-        #     r_cTIMEP = -10    
+        # THPT_GLO
+        self._max_thpt = max(self._max_thpt, thpt_glo)
+        r_thpt_glo = (np.exp(5*thpt_glo)) / (self._max_thpt)
+        r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
 
-        # if state > lst_state:
-        #     r_state = 10
-        # else:
-        #     r_state = -10
+        # PROCESSING DELAY
+        self._max_cTIMEP = max(10000, cTIMEP)
+        r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP)
+        r_cTIMEP = np.exp(5 * cTIMEP)
+        r_cDELAY = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
 
-
-        # r_mem_use = 2 * (self._maxqos - mem_use) / (self._maxqos - self._minqos) -1 # range -1, 1
-        r_mem_use = (self._maxqos - mem_use) / (self._maxqos - self._minqos)    # range 0, 1
-        # r_thpt_glo = 2 * (thpt_glo - 0) / (2400 - 0) -1 # range -1, 1
-        r_thpt_glo = thpt_glo /2400
-        # r_cDELAY =2 * ((20000 - cDELAY) / (20000)) -1 # ragen -1, 1
-        r_cDELAY = (20000 - cDELAY) / (20000)
+        # SCHEDULING DELAY
+        self._max_cDELAY = max(20000, cDELAY)
+        r_cDELAY_tmp = 1 - (cDELAY / self._max_cDELAY)
+        r_cDELAY_tmp = np.exp(5 * r_cDELAY_tmp)
+        r_cDELAY = np.clip(r_cDELAY_tmp, a_min=0.0, a_max=1.0)
 
 
         # rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
         # normalize_rewards = rewards / np.sum(rewards)
-        # reward = np.sum(normalize_rewards) * 100
-        # reward = r_thpt_glo + r_thpt_var + r_cDELAY + r_cTIMEP + r_RecSparkTotal + r_RecMQTotal + r_state + r_mem_use
-        # reward = (r_mem_use * r_thpt_glo * r_cDELAY) / (r_mem_use + r_thpt_glo + r_cDELAY)
-        reward = (r_mem_use * r_thpt_glo * r_cDELAY)
+
+        rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state]) # Removed mem_use
+        reward = np.prod(rewards_p) / np.sum(rewards_p) # Normalized Array
         
-        if reward < 0:
-            reward = 0.0
+        reward = np.clip(reward, a_min=0.0, a_max=1.0)
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
@@ -289,7 +295,9 @@ class PPOAgentMQ:
         self.ppo_agent.addToBuffer(traj_batched)
         
         # if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
-        if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size/2)):
+        # if self.ppo_agent.replay_buffer.num_frames().numpy() > (self._batch_size * 10):
+        # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size/2)):
+        if not (self.ppo_agent.replay_buffer.num_frames().numpy() % self._batch_size):
             self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)

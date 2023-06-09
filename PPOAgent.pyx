@@ -19,7 +19,9 @@ from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 
 from tf_agents.networks import value_network
+from tf_agents.networks import value_rnn_network
 from tf_agents.networks import actor_distribution_network
+from tf_agents.networks import actor_distribution_rnn_network
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import py_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
@@ -67,7 +69,7 @@ class PPOClipped:
 
         self.ppo_agent = self.createPPOAgent()
 
-        self.batch_size = 64
+        self.batch_size = 8
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
 
@@ -82,6 +84,11 @@ class PPOClipped:
             kernel_initializer=tf.keras.initializers.Orthogonal(seed=self.epochs),
             seed_stream_class=tfp.util.SeedStream
         )
+        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+            input_tensor_spec= self.observation_tensor_spec,
+            output_tensor_spec= self.action_tensor_spec,
+            lstm_size=(64,)
+        )
         return actor_net
 
     def createValueNet(self):
@@ -91,6 +98,9 @@ class PPOClipped:
             # activation_fn=tf.keras.activations.tanh,
             activation_fn=tf.keras.activations.relu,
             kernel_initializer=tf.keras.initializers.Orthogonal(seed=self.epochs)
+        )
+        value_net = value_rnn_network.ValueRnnNetwork(
+            self.observation_tensor_spec
         )
         return value_net
 
@@ -116,6 +126,7 @@ class PPOClipped:
             # normalize_observations=False,
             normalize_rewards=True,
             # normalize_rewards=False,
+            use_td_lambda_return=True,
             actor_net=self.actor_net,
             value_net=self.value_net,
             importance_ratio_clipping=self.epsilon,
@@ -181,11 +192,11 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._discount = GLOBAL_GAMMA
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','r_norm'])
+            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','reward'])
 
         self._max_thpt = 100
-        self._max_cDELAY = 20000
-        self._max_cTIMEP = 10000
+        self._max_cDELAY = 10000
+        self._max_cTIMEP = 5000
 
     def action_spec(self):
         return self._action_spec
@@ -222,49 +233,84 @@ class MqEnvironment(py_environment.PyEnvironment):
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
                 
         # MEMORY USED
-        if mem_use > self._maxqos:
-            r_mem_use = 0.0
-        else:
-            r_mem_use = (np.exp(5*mem_use) - self._maxqos) / (self._maxqos - self._minqos)
-            r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
-
-        # STATE
-        if state > self._maxqos:
-            r_state = 0.0
-        else:
-            r_state = (np.exp(5*r_state) - self._maxqos) / (self._maxqos - self._minqos)
-            r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
-        
+        r_mem_use   = self.r_mem_use_lin_norm_Inverted(mem_use)
         # THPT_GLO
-        self._max_thpt = max(self._max_thpt, thpt_glo)
-        r_thpt_glo = (np.exp(5*thpt_glo)) / (self._max_thpt)
-        r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
-
-        # PROCESSING DELAY
-        self._max_cTIMEP = max(10000, cTIMEP)
-        r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP)
-        r_cTIMEP = np.exp(5 * cTIMEP)
-        r_cDELAY = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
-
-        # SCHEDULING DELAY
-        self._max_cDELAY = max(20000, cDELAY)
-        r_cDELAY_tmp = 1 - (cDELAY / self._max_cDELAY)
-        r_cDELAY_tmp = np.exp(5 * r_cDELAY_tmp)
-        r_cDELAY = np.clip(r_cDELAY_tmp, a_min=0.0, a_max=1.0)
+        r_thpt_glo  = self.r_thpt_glo_lin_norm(thpt_glo)
+        # cDELAY: Scheculing Delay
+        r_cDELAY    = self.r_cDELAY_lin_norm_Inverted(cDELAY)
+        # cTIMEP: Processing Delay
+        r_cTIMEP    = self.r_cTIMEP_lin_norm_Inverted(r_cTIMEP)
+        # STATE
+        r_state     = self.r_state_lin_norm_Inverted(state)
 
 
-        # rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
-        # normalize_rewards = rewards / np.sum(rewards)
 
-        rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state]) # Removed mem_use
-        reward = np.prod(rewards_p) / np.sum(rewards_p) # Normalized Array
-        
+        rewards_p = np.array([r_mem_use ,r_thpt_glo, r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
+        reward = np.prod(rewards_p)
         reward = np.clip(reward, a_min=0.0, a_max=1.0)
+
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
             writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use, reward])
         return tf.convert_to_tensor(reward, dtype=tf.float32)
+
+    def r_thpt_glo_lin_norm(self, thpt_glo):
+        self._max_thpt = max(self._max_thpt, thpt_glo)
+        r_thpt_glo = thpt_glo / self._max_thpt
+        r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
+
+    def r_mem_use_lin_norm(self, mem_use):
+        r_mem_use = 0.0
+        if mem_use > self._maxqos or mem_use < self._minqos:
+            r_mem_use = 0.0
+        else:
+            r_mem_use = (mem_use - self._minqos) / (self._maxqos - self._minqos)
+            r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
+        return r_mem_use
+    
+    def r_mem_use_lin_norm_Inverted(self, mem_use):
+        r_mem_use = 0.0
+        if mem_use > self._maxqos or mem_use < self._minqos:
+            r_mem_use = 0.0
+        else:
+            r_mem_use = 1 - ((mem_use - self._minqos) / (self._maxqos - self._minqos))
+            r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
+        return r_mem_use
+
+    # Scheduling Delay
+    def r_cDELAY_lin_norm_Inverted(self, cDELAY):
+        self._max_cDELAY = max(self._max_cDELAY, cDELAY)
+        r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
+        r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
+        return r_cDELAY
+
+    # Processing Delay
+    def r_cTIMEP_lin_norm_Inverted(self, cTIMEP):
+        self._max_cTIMEP = max(self._max_cTIMEP, cTIMEP)
+        r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP)
+        r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
+        return r_cTIMEP
+
+    # STATE
+    def r_state_lin_norm(self, state):
+        r_state = 0.0
+        if state > self._maxqos or state < self._minqos:
+            r_state = 0.0
+        else:
+            r_state = (state - self._minqos) / (self._maxqos - self._minqos)
+            r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
+        return state
+
+    def r_state_lin_norm_Inverted(self, state):
+        r_state = 0.0
+        if state > self._maxqos or state < self._minqos:
+            r_state = 0.0
+        else:
+            r_state = 1 - (state - self._minqos) / (self._maxqos - self._minqos)
+            r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
+        return state
+
 
 
 class PPOAgentMQ:
@@ -279,9 +325,6 @@ class PPOAgentMQ:
         self.env._current_action = self._last_action
         self._last_reward = None
         self._first_exec = True
-        # print("I'm PPO!")
-        # with open(LOG_FILE, mode='a+') as logFile:
-        #     logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
         
     def step(self, _new_state):
       
@@ -295,34 +338,28 @@ class PPOAgentMQ:
         self.ppo_agent.addToBuffer(traj_batched)
         
         # if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
-        # if self.ppo_agent.replay_buffer.num_frames().numpy() > (self._batch_size * 10):
+        if self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size * 4):
         # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size/2)):
-        if not (self.ppo_agent.replay_buffer.num_frames().numpy() % self._batch_size):
+        # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % self._batch_size):
             self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)
-        # with open(LOG_FILE, mode='a+') as logFile:
-        #     logFile.write('{}, {}, {}\n'.format(last_time_step.observation.numpy(), last_action.action.numpy(), current_time_step.observation.numpy()))
-
-
-        # if self.ppo_agent.ppo_agent.train_step_counter < 300:
-        #     action = random.randint(0,1)
-        # else:
+       
         # # Return action -1 because the actions are mapped to 0,1,2 need to -> 1, 0, 1
         #     action = self._last_action.action.numpy() - 1
         action = self._last_action.action.numpy() - 1
         
+        # Test
+        if self.ppo_agent.replay_buffer.num_frames().numpy() < self._batch_size * 4:
+            return random.choices([-1, 0, 1], [0.1, 0.7, 0.2])[0]
+
         return action
-        #return 1
 
     def finish(self, last_state):
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
         last_action = self._last_action
         current_time_step = self.env.mq_step(last_action, last_state)
-
-        # with open(LOG_FILE, mode='a+') as logFile:
-        #     logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
 
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)

@@ -131,7 +131,7 @@ class PPOClipped:
             normalize_observations=False,
             # normalize_rewards=True,
             normalize_rewards=False,
-            # use_td_lambda_return=True,
+            use_td_lambda_return=True,
             actor_net=self.actor_net,
             value_net=self.value_net,
             importance_ratio_clipping=self.epsilon,
@@ -240,7 +240,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
                 
         # MEMORY USED
-        r_mem_use   = self.r_mem_use_lin_norm_Inverted(mem_use)
+        r_mem_use   = self.r_mem_use_lin_mid_point(mem_use)
         # THPT_GLO
         r_thpt_glo  = self.r_thpt_glo_lin_norm(thpt_glo)
         # cDELAY: Scheculing Delay
@@ -248,9 +248,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         # cTIMEP: Processing Delay
         r_cTIMEP    = self.r_cTIMEP_lin_norm_Inverted(r_cTIMEP)
         # STATE
-        r_state     = self.r_state_lin_norm_Inverted(state)
+        r_state     = self.r_state_lin_mid_point(state)
 
-        rewards_p = np.array([r_mem_use ,r_thpt_glo, r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
+        rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use], dtype=np.float32)
         reward = np.prod(rewards_p)
         reward = np.clip(reward, a_min=0.0, a_max=1.0)
         print('Rewards: {}\nReward: {}'.format(rewards_p, reward))
@@ -284,6 +284,15 @@ class MqEnvironment(py_environment.PyEnvironment):
             r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
         return r_mem_use
 
+    def r_mem_use_lin_mid_point(self, mem_use):
+        r_mem_use = 0.0
+        if mem_use > self._maxqos or mem_use < self._minqos:
+            r_mem_use = 0.0
+        else:
+            midpoint = (self._maxqos + self._minqos) / 2
+            r_mem_use = 1 - abs(mem_use - midpoint) / (midpoint - self._minqos)
+        return r_mem_use
+
     # Scheduling Delay
     def r_cDELAY_lin_norm_Inverted(self, cDELAY):
         self._max_cDELAY = max(self._max_cDELAY, cDELAY)
@@ -315,6 +324,15 @@ class MqEnvironment(py_environment.PyEnvironment):
         else:
             r_state = 1 - (state - self._minqos) / (self._maxqos - self._minqos)
             r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
+        return r_state
+    
+    def r_state_lin_mid_point(self, state):
+        r_state = 0.0
+        if state > self._maxqos or state < self._minqos:
+            r_state = 0.0
+        else:
+            midpoint = (self._maxqos + self._minqos) / 2
+            r_state = 1 - abs(state - midpoint) / (midpoint - self._minqos)
         return r_state
 
 

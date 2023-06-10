@@ -18,6 +18,7 @@ from tf_agents.specs import TensorSpec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 
+from tf_agents import networks
 from tf_agents.networks import value_network
 from tf_agents.networks import value_rnn_network
 from tf_agents.networks import actor_distribution_network
@@ -69,39 +70,43 @@ class PPOClipped:
 
         self.ppo_agent = self.createPPOAgent()
 
-        self.batch_size = 8
+        self.batch_size = 32
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
 
 
     def createActorNet(self):
+        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+            input_tensor_spec= self.observation_tensor_spec,
+            output_tensor_spec= self.action_tensor_spec,
+            # input_fc_layer_params= self.observation_tensor_spec,
+            input_fc_layer_params= (128,64),
+            lstm_size= (20,),
+            # rnn_construction_fn=tf.keras.layers.LSTM,
+            output_fc_layer_params= None
+        )
         actor_net = actor_distribution_network.ActorDistributionNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
             fc_layer_params=self.actor_fc_layers,
             # activation_fn=tf.keras.activations.tanh,
             activation_fn=tf.keras.activations.relu,
-            kernel_initializer=tf.keras.initializers.Orthogonal(seed=self.epochs),
             seed_stream_class=tfp.util.SeedStream
-        )
-        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
-            input_tensor_spec= self.observation_tensor_spec,
-            output_tensor_spec= self.action_tensor_spec,
-            lstm_size=(64,)
         )
         return actor_net
 
     def createValueNet(self):
-        value_net = value_network.ValueNetwork(
-            input_tensor_spec= self.observation_tensor_spec,
-            fc_layer_params=self.value_fc_layers,
-            # activation_fn=tf.keras.activations.tanh,
-            activation_fn=tf.keras.activations.relu,
-            kernel_initializer=tf.keras.initializers.Orthogonal(seed=self.epochs)
-        )
         value_net = value_rnn_network.ValueRnnNetwork(
-            self.observation_tensor_spec
+            input_tensor_spec= self.observation_tensor_spec,
+            input_fc_layer_params= (128,64),
+            lstm_size= (20,),
+            output_fc_layer_params= None
         )
+        # value_net = value_network.ValueNetwork(
+        #     input_tensor_spec= self.observation_tensor_spec,
+        #     fc_layer_params=self.value_fc_layers,
+        #     activation_fn=tf.keras.activations.relu,
+        # )
         return value_net
 
     def createOptimizer(self):
@@ -122,28 +127,29 @@ class PPOClipped:
             time_step_spec=self.time_step_tensor_spec,
             action_spec=self.action_tensor_spec,
             optimizer=self.optimizer,
-            normalize_observations=True,
-            # normalize_observations=False,
-            normalize_rewards=True,
-            # normalize_rewards=False,
-            use_td_lambda_return=True,
+            # normalize_observations=True,
+            normalize_observations=False,
+            # normalize_rewards=True,
+            normalize_rewards=False,
+            # use_td_lambda_return=True,
             actor_net=self.actor_net,
             value_net=self.value_net,
             importance_ratio_clipping=self.epsilon,
             num_epochs=self.epochs,
             use_gae=True,
             train_step_counter=self.train_step_counter,
+            greedy_eval=False
         )
         agent_ppo.initialize()
         agent_ppo.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
-        agent_ppo.train = common.function(agent_ppo.train)
+        # agent_ppo.train = common.function(agent_ppo.train)
+        agent_ppo.train = common.function(agent_ppo.train, autograph=False)
         return agent_ppo
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec= self.ppo_agent.collect_policy.trajectory_spec,
-            # self.ppo_agent.policy.trajectory_spec,
             batch_size=1,
             max_length=10000)
         return replay_buffer
@@ -164,14 +170,16 @@ class PPOClipped:
 
     def train(self):
         experience, unused_info = next(self.iterator)
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('{}\n'.format(experience))
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}\n'.format(experience))
         self.ppo_agent.train(experience)
         # print('Step Counter: {0}'.format(self.train_step_counter))
 
     def getAction(self, time_step):
+        policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+
         # return self.ppo_agent.policy.action(time_step)
-        return self.ppo_agent.collect_policy.action(time_step)
+        return self.ppo_agent.collect_policy.action(time_step, policy_state)
 
 
 
@@ -221,7 +229,6 @@ class MqEnvironment(py_environment.PyEnvironment):
     def mq_step(self, action, state):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
-        print("R: {0}".format(reward))
         self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount)
         self._action = action
         return self._current_time_step
@@ -243,12 +250,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         # STATE
         r_state     = self.r_state_lin_norm_Inverted(state)
 
-
-
         rewards_p = np.array([r_mem_use ,r_thpt_glo, r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
         reward = np.prod(rewards_p)
         reward = np.clip(reward, a_min=0.0, a_max=1.0)
-
+        print('Rewards: {}\nReward: {}'.format(rewards_p, reward))
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
@@ -259,6 +264,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._max_thpt = max(self._max_thpt, thpt_glo)
         r_thpt_glo = thpt_glo / self._max_thpt
         r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
+        return r_thpt_glo
 
     def r_mem_use_lin_norm(self, mem_use):
         r_mem_use = 0.0
@@ -300,7 +306,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         else:
             r_state = (state - self._minqos) / (self._maxqos - self._minqos)
             r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
-        return state
+        return r_state
 
     def r_state_lin_norm_Inverted(self, state):
         r_state = 0.0
@@ -309,7 +315,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         else:
             r_state = 1 - (state - self._minqos) / (self._maxqos - self._minqos)
             r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
-        return state
+        return r_state
 
 
 
@@ -338,9 +344,9 @@ class PPOAgentMQ:
         self.ppo_agent.addToBuffer(traj_batched)
         
         # if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
-        if self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size * 4):
+        # if self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size * 4):
         # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size/2)):
-        # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % self._batch_size):
+        if not (self.ppo_agent.replay_buffer.num_frames().numpy() % self._batch_size):
             self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)
@@ -350,8 +356,8 @@ class PPOAgentMQ:
         action = self._last_action.action.numpy() - 1
         
         # Test
-        if self.ppo_agent.replay_buffer.num_frames().numpy() < self._batch_size * 4:
-            return random.choices([-1, 0, 1], [0.1, 0.7, 0.2])[0]
+        # if self.ppo_agent.replay_buffer.num_frames().numpy() < self._batch_size * 4:
+        #     return random.choices([-1, 0, 1], [0.1, 0.7, 0.2])[0]
 
         return action
 

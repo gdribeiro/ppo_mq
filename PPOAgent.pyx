@@ -87,12 +87,14 @@ class PPOClipped:
                 # input_fc_layer_params= self.observation_tensor_spec,
                 input_fc_layer_params= (128,64),
                 lstm_size= (128,128),
+                dtype=tf.float32,
                 # rnn_construction_fn=tf.keras.layers.LSTM,
                 output_fc_layer_params= None
             )
-            print('ActorDistributionRnnNetwork: {}'.format(actor_net.summary))
+            actor_net.create_variables()
+            print('ActorDistributionRnnNetwork: {}'.format(actor_net.summary()))
             with open(LOG_FILE, mode='a+') as logFile:
-                logFile.write('ActorDistributionRnnNetwork:\n{}\n'.format(actor_net.summary))
+                logFile.write('ActorDistributionRnnNetwork:\n{}\n'.format(actor_net.summary()))
         except Exception as e:
             print("An error occurred: ", e)
         actor_net = actor_distribution_network.ActorDistributionNetwork(
@@ -103,9 +105,6 @@ class PPOClipped:
             activation_fn=tf.keras.activations.relu,
             seed_stream_class=tfp.util.SeedStream
         )
-        print('ActorDistributionNetwork: {}'.format(actor_net.summary))
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('ActorDistributionNetwork:\n{}\n'.format(actor_net.summary))
         return actor_net
 
     def createValueNet(self):
@@ -113,11 +112,9 @@ class PPOClipped:
             input_tensor_spec= self.observation_tensor_spec,
             input_fc_layer_params= (128,64),
             lstm_size= (128,128),
+            dtype=tf.float32,
             output_fc_layer_params= None
         )
-        print('ValueRnnNetwork: {}'.format(value_net.summary))
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('ValueRnnNetwork:\n{}\n'.format(value_net.summary))
         # value_net = value_network.ValueNetwork(
         #     input_tensor_spec= self.observation_tensor_spec,
         #     fc_layer_params=self.value_fc_layers,
@@ -162,6 +159,12 @@ class PPOClipped:
         
         try:    
             agent_ppo.initialize()
+            print('ActorDistributionNetwork: {}'.format(agent_ppo.actor_net.summary()))
+            with open(LOG_FILE, mode='a+') as logFile:
+                logFile.write('ActorDistributionNetwork:\n{}\n'.format(agent_ppo.actor_net.summary()))
+            print('ValueRnnNetwork: {}'.format(agent_ppo._value_net.summary()))
+            with open(LOG_FILE, mode='a+') as logFile:
+                logFile.write('ValueRnnNetwork:\n{}\n'.format(agent_ppo._value_net.summary()))
         except Exception as e:
             print("An error occurred: ", e)
         
@@ -196,9 +199,9 @@ class PPOClipped:
         experience, unused_info = next(self.iterator)
         # with open(LOG_FILE, mode='a+') as logFile:
         #     logFile.write('Experience:\n{}\n'.format(experience))
-        print('Step Counter: {0}'.format(self.train_step_counter))
+        print('Step Counter: {0}'.format(self.train_step_counter.numpy()))
         self.ppo_agent.train(experience)
-        print('Step Counter: {0}'.format(self.train_step_counter))
+        print('Step Counter: {0}'.format(self.train_step_counter.numpy()))
 
     def getAction(self, time_step):
         policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
@@ -229,7 +232,7 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         self._max_thpt = 100
         self._max_cDELAY = 10000
-        self._max_cTIMEP = 5000
+        self._max_cTIMEP = 2000
 
     def action_spec(self):
         return self._action_spec
@@ -269,7 +272,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         # cDELAY: Scheculing Delay
         r_cDELAY    = self.r_cDELAY_lin_norm_Inverted(cDELAY)
         # cTIMEP: Processing Delay
-        r_cTIMEP    = self.r_cTIMEP_lin_norm(r_cTIMEP)
+        r_cTIMEP    = self.r_cTIMEP_lin_norm_Inverted(r_cTIMEP)
         # STATE
         r_state     = self.r_state_lin_mid_point(state)
         # MEMORY USED
@@ -278,7 +281,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use], dtype=np.float32)
         reward = np.prod(rewards_p)
         reward = np.clip(reward, a_min=0.0, a_max=1.0)
-        print('r_thpt_glo: {}\n\nr_cDELAY: {}\nr_cTIMEP: {}\nr_state: {}\nr_mem_use: {}\nReward: {}'.format(r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use, reward))
+        print('r_thpt_glo: {}\nr_cDELAY: {}\nr_cTIMEP: {}\nr_state: {}\nr_mem_use: {}\nReward: {}'.format(r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use, reward))
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)

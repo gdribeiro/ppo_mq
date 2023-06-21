@@ -36,8 +36,9 @@ import csv
 import random
 
 LOGS_DIR =  '/tmp/'
-CSV_FILE = LOGS_DIR + "/ppo_logs_01.csv"
-LOG_FILE = LOGS_DIR + "/ppo_logs_01.log"
+CSV_FILE = LOGS_DIR + "/log_rewards.csv"
+LOG_FILE = LOGS_DIR + "/log_general.log"
+AGENT_FILE = LOGS_DIR + "/log_agent.csv"
 
 MODEL_NAME = 'PPO-01'
 
@@ -45,10 +46,10 @@ MODEL_NAME = 'PPO-01'
 AGGREGATE_STATS_EVERY = 20  # steps
 
 GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 10       #3
+GLOBAL_EPOCHS = 3       #3
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 4
-GLOBAL_STEPS = 128
+GLOBAL_BATCH = 2
+GLOBAL_STEPS = 64 # 128
 
 
 # PPO Agent 
@@ -56,8 +57,9 @@ class PPOClipped:
 
     def __init__(self, env):
         # Constants
-        self.actor_fc_layers = (128,64,64)
-        self.value_fc_layers = (128,64,64)
+        self.actor_fc_layers = (32,32)
+        self.value_fc_layers = (32,32)
+        self.policy_fc_layers= (32,32)
         self.epsilon = GLOBAL_EPSILON
         self.epochs = GLOBAL_EPOCHS
 
@@ -78,25 +80,12 @@ class PPOClipped:
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
 
+        with open(AGENT_FILE, mode='w') as agentLog:
+            writer = csv.writer(agentLog)
+            writer.writerow(['StepCounter', 'Loss'])
+
 
     def createActorNet(self):
-        try:
-            actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
-                input_tensor_spec= self.observation_tensor_spec,
-                output_tensor_spec= self.action_tensor_spec,
-                # input_fc_layer_params= self.observation_tensor_spec,
-                input_fc_layer_params= (128,64),
-                lstm_size= (128,128),
-                dtype=tf.float32,
-                # rnn_construction_fn=tf.keras.layers.LSTM,
-                output_fc_layer_params= None
-            )
-            actor_net.create_variables()
-            print('ActorDistributionRnnNetwork: {}'.format(actor_net.summary()))
-            with open(LOG_FILE, mode='a+') as logFile:
-                logFile.write('ActorDistributionRnnNetwork:\n{}\n'.format(actor_net.summary()))
-        except Exception as e:
-            print("An error occurred: ", e)
         actor_net = actor_distribution_network.ActorDistributionNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
@@ -108,65 +97,43 @@ class PPOClipped:
         return actor_net
 
     def createValueNet(self):
-        value_net = value_rnn_network.ValueRnnNetwork(
+        value_net = value_network.ValueNetwork(
             input_tensor_spec= self.observation_tensor_spec,
-            input_fc_layer_params= (128,64),
-            lstm_size= (128,128),
-            dtype=tf.float32,
-            output_fc_layer_params= None
+            fc_layer_params=self.value_fc_layers,
+            activation_fn=tf.keras.activations.relu,
         )
-        # value_net = value_network.ValueNetwork(
-        #     input_tensor_spec= self.observation_tensor_spec,
-        #     fc_layer_params=self.value_fc_layers,
-        #     activation_fn=tf.keras.activations.relu,
-        # )
         return value_net
 
     def createOptimizer(self):
-        initial_learning_rate = 1e-3
-        decay_steps = 1000
-        decay_rate = 0.96
-        learning_rate = tf.optimizers.schedules.ExponentialDecay(
-            initial_learning_rate, decay_steps, decay_rate, staircase=True
-        )
-        optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
-        learning_rate = 2.5e-4
+        learning_rate = 2.5e-3
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         return optimizer
 
 
     def createPPOAgent(self):
-        try:
-            agent_ppo = ppo_clip_agent.PPOClipAgent(
-                time_step_spec=self.time_step_tensor_spec,
-                action_spec=self.action_tensor_spec,
-                optimizer=self.optimizer,
-                # normalize_observations=True,
-                normalize_observations=False,
-                # normalize_rewards=True,
-                normalize_rewards=False,
-                use_td_lambda_return=True,
-                actor_net=self.actor_net,
-                value_net=self.value_net,
-                importance_ratio_clipping=self.epsilon,
-                num_epochs=self.epochs,
-                use_gae=True,
-                train_step_counter=self.train_step_counter,
-                greedy_eval=False
-            )
-        except Exception as e:
-            print("An error occurred: ", e)
+        agent_ppo = ppo_clip_agent.PPOClipAgent(
+            time_step_spec=self.time_step_tensor_spec,
+            action_spec=self.action_tensor_spec,
+            optimizer=self.optimizer,
+            normalize_observations=True,
+            # normalize_observations=False,
+            # normalize_rewards=True,
+            normalize_rewards=False,
+            # use_td_lambda_return=True,
+            actor_net=self.actor_net,
+            value_net=self.value_net,
+            importance_ratio_clipping=self.epsilon,
+            num_epochs=self.epochs,
+            use_gae=True,
+            train_step_counter=self.train_step_counter,
+            # greedy_eval=False
+            greedy_eval=True
+        )
         
-        try:    
-            agent_ppo.initialize()
-            print('ActorDistributionNetwork: {}'.format(agent_ppo.actor_net.summary()))
-            with open(LOG_FILE, mode='a+') as logFile:
-                logFile.write('ActorDistributionNetwork:\n{}\n'.format(agent_ppo.actor_net.summary()))
-            print('ValueRnnNetwork: {}'.format(agent_ppo._value_net.summary()))
-            with open(LOG_FILE, mode='a+') as logFile:
-                logFile.write('ValueRnnNetwork:\n{}\n'.format(agent_ppo._value_net.summary()))
-        except Exception as e:
-            print("An error occurred: ", e)
+        agent_ppo.initialize()
+        print('ActorDistributionNetwork: {}'.format(agent_ppo.actor_net.summary()))
+        print('ValueRnnNetwork: {}'.format(agent_ppo._value_net.summary()))
+
         
         agent_ppo.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
@@ -197,11 +164,12 @@ class PPOClipped:
 
     def train(self):
         experience, unused_info = next(self.iterator)
-        # with open(LOG_FILE, mode='a+') as logFile:
-        #     logFile.write('Experience:\n{}\n'.format(experience))
-        print('Step Counter: {0}'.format(self.train_step_counter.numpy()))
-        self.ppo_agent.train(experience)
-        print('Step Counter: {0}'.format(self.train_step_counter.numpy()))
+        loss, _ = self.ppo_agent.train(experience)
+
+        with open(AGENT_FILE, mode='a+', newline='') as agentLog:
+            writer = csv.writer(agentLog)
+            writer.writerow([self.train_step_counter.numpy(), loss.numpy()])
+        print('TrainStep: {},\t LOSS: {}'.format(self.train_step_counter.numpy(), loss.numpy()))
 
     def getAction(self, time_step):
         policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
@@ -218,6 +186,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._action_spec = BoundedTensorSpec(
             shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
+        with open(LOG_FILE, mode='a+') as logFile:
+            logFile.write('Tensor Spec is Discreate:\n{}\n'.format(tensor_spec.is_discrete(self._action_spec)))
+        print('Tensor Spec is Discreate:\n{}\n'.format(tensor_spec.is_discrete(self._action_spec)))
 
         self._maxqos = maxqos
         self._minqos = minqos
@@ -268,7 +239,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
                 
         # THPT_GLO
-        r_thpt_glo  = self.r_thpt_glo_lin_norm(thpt_glo)
+        r_thpt_glo  = self.r_thpt_glo_lin_norm_avg(thpt_glo)
         # cDELAY: Scheculing Delay
         r_cDELAY    = self.r_cDELAY_lin_norm_Inverted(cDELAY)
         # cTIMEP: Processing Delay
@@ -278,8 +249,15 @@ class MqEnvironment(py_environment.PyEnvironment):
         # MEMORY USED
         r_mem_use   = self.r_mem_use_lin_mid_point(mem_use)
 
+
         rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use], dtype=np.float32)
-        reward = np.prod(rewards_p)
+        weights = np.array([1, 10, 1, 3, 4])
+        # reward = np.prod(rewards_p)
+        reward = np.average(rewards_p, weights=weights)
+
+
+        reward = np.round(reward * 100) / 100
+        # reward = 0.0 if reward < 0.2 else np.clip(reward, a_min=0.0, a_max=1.0)
         reward = np.clip(reward, a_min=0.0, a_max=1.0)
         print('r_thpt_glo: {}\nr_cDELAY: {}\nr_cTIMEP: {}\nr_state: {}\nr_mem_use: {}\nReward: {}'.format(r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use, reward))
 
@@ -290,6 +268,12 @@ class MqEnvironment(py_environment.PyEnvironment):
 
     def r_thpt_glo_lin_norm(self, thpt_glo):
         self._max_thpt = max(self._max_thpt, thpt_glo)
+        r_thpt_glo = thpt_glo / self._max_thpt
+        r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
+        return r_thpt_glo
+
+    def r_thpt_glo_lin_norm_avg(self, thpt_glo):
+        self._max_thpt = (self._max_thpt + thpt_glo)/2
         r_thpt_glo = thpt_glo / self._max_thpt
         r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
         return r_thpt_glo
@@ -319,12 +303,17 @@ class MqEnvironment(py_environment.PyEnvironment):
         else:
             midpoint = (self._maxqos + self._minqos) / 2
             r_mem_use = 1 - abs(mem_use - midpoint) / (midpoint - self._minqos)
-        print('r_mem_use: {}'.format(r_mem_use))
         return r_mem_use
 
     # Scheduling Delay
     def r_cDELAY_lin_norm_Inverted(self, cDELAY):
         self._max_cDELAY = max(self._max_cDELAY, cDELAY)
+        r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
+        r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
+        return r_cDELAY
+
+    def r_cDELAY_lin_norm_Inverted_avg(self, cDELAY):
+        self._max_cDELAY = (self._max_cDELAY + cDELAY) / 2
         r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
         r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
         return r_cDELAY
@@ -397,14 +386,14 @@ class PPOAgentMQ:
         self.ppo_agent.addToBuffer(traj_batched)
         # print('Trajectory Before Buffer: {}'.format(traj_batched))
         
-        # if self.ppo_agent.replay_buffer.num_frames().numpy() > self._batch_size:
+        if not (self.ppo_agent.replay_buffer.num_frames().numpy() % GLOBAL_STEPS):
         # if self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size * 4):
         # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self._batch_size/2)):
         # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % self._batch_size):
         # if not (self.ppo_agent.replay_buffer.num_frames().numpy() % GLOBAL_STEPS):
-        if not (self.ppo_agent.replay_buffer.num_frames().numpy() > GLOBAL_STEPS):
-            if not (self.ppo_agent.replay_buffer.num_frames().numpy() % GLOBAL_STEPS/2):
-                self.ppo_agent.train()
+        # if not (self.ppo_agent.replay_buffer.num_frames().numpy() > GLOBAL_STEPS):
+        #     if not (self.ppo_agent.replay_buffer.num_frames().numpy() % GLOBAL_STEPS/2):
+            self.ppo_agent.train()
             
         self._last_action = self.ppo_agent.getAction(current_time_step)
        
@@ -450,12 +439,7 @@ cdef public int infer(object agent , float* observation):
         state.append(observation[i])
 
     action = agent.step(state)
-    # action = random.randint(0,1)
-    # action = random.choices([-1, 0, 1], [0.1, 0.7, 0.2])[0]
-    # action = 0
 
-    #return random.randint(0, 1)
-    print("A: {0}".format(action))
     return action
 
 cdef public void finish(object agent, float* last_state):

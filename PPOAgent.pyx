@@ -29,26 +29,41 @@ from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 from tf_agents.environments import py_environment
 
+from tf_agents.metrics import tf_metrics
+from tf_agents.eval.metric_utils import log_metrics
+
+
 from cpython cimport array
 import csv
 
 # TESTS
 import random
 
+
+
 LOGS_DIR =  '/tmp/'
 CSV_FILE = LOGS_DIR + "/log_rewards.csv"
 LOG_FILE = LOGS_DIR + "/log_general.log"
 AGENT_FILE = LOGS_DIR + "/log_agent.csv"
 
+tf_log_metrics_dir = LOGS_DIR + "/tf-metrics"
+summary_writer = tf.summary.create_file_writer(tf_log_metrics_dir)
+
+train_metrics = [
+    tf_metrics.NumberOfEpisodes(),
+    tf_metrics.EnvironmentSteps(),
+    tf_metrics.AverageReturnMetric(),
+    tf_metrics.AverageEpisodeLengthMetric(),
+]
+
+
 MODEL_NAME = 'PPO-01'
 
-#  Stats settings
-AGGREGATE_STATS_EVERY = 20  # steps
 
 GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 3       #3
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 2
+GLOBAL_BATCH = 1
 GLOBAL_STEPS = 64 # 128
 
 
@@ -57,9 +72,9 @@ class PPOClipped:
 
     def __init__(self, env):
         # Constants
-        self.actor_fc_layers = (32,32)
-        self.value_fc_layers = (32,32)
-        self.policy_fc_layers= (32,32)
+        self.policy_fc_layers= (128,128,128)
+        self.actor_fc_layers = self.policy_fc_layers
+        self.value_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
         self.epochs = GLOBAL_EPOCHS
 
@@ -90,8 +105,8 @@ class PPOClipped:
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
             fc_layer_params=self.actor_fc_layers,
-            # activation_fn=tf.keras.activations.tanh,
-            activation_fn=tf.keras.activations.relu,
+            activation_fn=tf.keras.activations.tanh,
+            # activation_fn=tf.keras.activations.relu,
             seed_stream_class=tfp.util.SeedStream
         )
         return actor_net
@@ -100,12 +115,20 @@ class PPOClipped:
         value_net = value_network.ValueNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             fc_layer_params=self.value_fc_layers,
-            activation_fn=tf.keras.activations.relu,
+            # activation_fn=tf.keras.activations.relu,
+            activation_fn=tf.keras.activations.tanh
         )
+        # value_net = value_rnn_network.ValueRnnNetwork(
+        #     input_tensor_spec= self.observation_tensor_spec,
+        #     input_fc_layer_params=(128,),
+        #     output_fc_layer_params=(128,128),
+        #     lstm_size=(128,),
+        #     activation_fn=tf.keras.activations.tanh
+        # )
         return value_net
 
     def createOptimizer(self):
-        learning_rate = 2.5e-3
+        learning_rate = 5e-4
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         return optimizer
 
@@ -126,8 +149,10 @@ class PPOClipped:
             num_epochs=self.epochs,
             use_gae=True,
             train_step_counter=self.train_step_counter,
-            # greedy_eval=False
-            greedy_eval=True
+            # greedy_eval=False,
+            greedy_eval=True,
+            entropy_regularization=0.01,
+            value_pred_loss_coef=1.0
         )
         
         agent_ppo.initialize()
@@ -166,10 +191,16 @@ class PPOClipped:
         experience, unused_info = next(self.iterator)
         loss, _ = self.ppo_agent.train(experience)
 
+        # with summary_writer.as_default():
+        #     log_metrics(train_metrics)
+
         with open(AGENT_FILE, mode='a+', newline='') as agentLog:
             writer = csv.writer(agentLog)
             writer.writerow([self.train_step_counter.numpy(), loss.numpy()])
-        print('TrainStep: {},\t LOSS: {}'.format(self.train_step_counter.numpy(), loss.numpy()))
+        print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), loss.numpy()))
+        
+        if self.replay_buffer.num_frames().numpy() > (self.batch_size * self.num_steps):
+            self.replay_buffer.clear()
 
     def getAction(self, time_step):
         policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
@@ -186,12 +217,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._action_spec = BoundedTensorSpec(
             shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
-        with open(LOG_FILE, mode='a+') as logFile:
-            logFile.write('Tensor Spec is Discreate:\n{}\n'.format(tensor_spec.is_discrete(self._action_spec)))
-        print('Tensor Spec is Discreate:\n{}\n'.format(tensor_spec.is_discrete(self._action_spec)))
-
+        
         self._maxqos = maxqos
         self._minqos = minqos
+
 
         self._rewards = 0
         self._current_time_step = None
@@ -241,23 +270,24 @@ class MqEnvironment(py_environment.PyEnvironment):
         # THPT_GLO
         r_thpt_glo  = self.r_thpt_glo_lin_norm_avg(thpt_glo)
         # cDELAY: Scheculing Delay
-        r_cDELAY    = self.r_cDELAY_lin_norm_Inverted(cDELAY)
+        r_cDELAY    = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
         # cTIMEP: Processing Delay
-        r_cTIMEP    = self.r_cTIMEP_lin_norm_Inverted(r_cTIMEP)
+        r_cTIMEP    = self.r_cTIMEP_lin_norm_Inverted_avg(r_cTIMEP)
         # STATE
-        r_state     = self.r_state_lin_mid_point(state)
+        r_state     = self.r_state_lin_norm_Inverted(state)
         # MEMORY USED
         r_mem_use   = self.r_mem_use_lin_mid_point(mem_use)
 
 
         rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use], dtype=np.float32)
-        weights = np.array([1, 10, 1, 3, 4])
-        # reward = np.prod(rewards_p)
+        # rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
+        weights = np.array([1, 15, 1, 7, 1]) # Good np.array([3, 15, 1, 10, 1])
+        # weights = np.array([35, 100, 10, 50])
         reward = np.average(rewards_p, weights=weights)
+        # reward = r_cDELAY
 
 
         reward = np.round(reward * 100) / 100
-        # reward = 0.0 if reward < 0.2 else np.clip(reward, a_min=0.0, a_max=1.0)
         reward = np.clip(reward, a_min=0.0, a_max=1.0)
         print('r_thpt_glo: {}\nr_cDELAY: {}\nr_cTIMEP: {}\nr_state: {}\nr_mem_use: {}\nReward: {}'.format(r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use, reward))
 
@@ -306,6 +336,11 @@ class MqEnvironment(py_environment.PyEnvironment):
         return r_mem_use
 
     # Scheduling Delay
+    def r_cDELAY_lin_norm_Inverted_original(self, cDELAY):
+        r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
+        r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
+        return r_cDELAY
+    
     def r_cDELAY_lin_norm_Inverted(self, cDELAY):
         self._max_cDELAY = max(self._max_cDELAY, cDELAY)
         r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
@@ -313,8 +348,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         return r_cDELAY
 
     def r_cDELAY_lin_norm_Inverted_avg(self, cDELAY):
+        epsilon = 1e-10
         self._max_cDELAY = (self._max_cDELAY + cDELAY) / 2
-        r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
+        r_cDELAY = 1 - (cDELAY / self._max_cDELAY + epsilon)
         r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
         return r_cDELAY
 
@@ -328,6 +364,13 @@ class MqEnvironment(py_environment.PyEnvironment):
     def r_cTIMEP_lin_norm_Inverted(self, cTIMEP):
         self._max_cTIMEP = max(self._max_cTIMEP, cTIMEP)
         r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP)
+        r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
+        return r_cTIMEP
+    
+    def r_cTIMEP_lin_norm_Inverted_avg(self, cTIMEP):
+        epsilon = 1e-10
+        self._max_cTIMEP = (self._max_cTIMEP + cTIMEP + epsilon) / 2
+        r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP + epsilon)
         r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
         return r_cTIMEP
 

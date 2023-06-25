@@ -56,7 +56,7 @@ MODEL_NAME = 'PPO-01'
 GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 3       #3
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 2
+GLOBAL_BATCH = 4
 GLOBAL_STEPS = 32 # 128
 
 
@@ -179,10 +179,12 @@ class PPOClipped:
         print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), loss.numpy()))
         
     def getAction(self, time_step):
-        policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+        collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+        collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
+
 
         # return self.ppo_agent.policy.action(time_step)
-        return self.ppo_agent.collect_policy.action(time_step, policy_state)
+        return collect_action
     
 
 class MqEnvironment(py_environment.PyEnvironment):
@@ -291,7 +293,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         #     else:
         #         reward = 0.1
 
-        if lst_state >= state:
+        # if lst_thpt_var >= thpt_var:
+        if lst_cDELAY >= cDELAY:
             if cDELAY <= window_time:
                 reward = 1.0
             elif cDELAY <= (window_time * 2):

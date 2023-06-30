@@ -23,7 +23,7 @@ for i in `cat NODEFILES/nodefile `; do
 
 	# ssh root@$i "source /home/gribeiro/ml_on_mq/ppo_mq/pyup/py9.sh"
 
-	ssh root$i "pip3 install tf-agents"
+	# ssh root$i "pip3 install tf-agents"
 	# ssh $i "source /home/gribeiro//home/gribeiro/.bashrc"
 	# ssh root$i "pip3 install -r /home/gribeiro/ml_on_mq/ppo_mq/requirements.txt"
 	# ssh $i "pip3 install --upgrade tensorflow tf-agents"
@@ -41,6 +41,8 @@ for i in `cat NODEFILES/nodefile `; do
 	# ssh root@$i "pip3 install --upgrade dm-tree==0.1.5 tf-agents==0.6.0"
 	# ssh root@$i "pip3 install --upgrade dm-tree tf-agents"
 	# ssh root@$i "pip3 install -r /home/gribeiro/ml_on_mq/SAQN/debian9_requirements.txt"
+
+	ssh root@$i "source /home/gribeiro/.bashrc"
 
 
 done

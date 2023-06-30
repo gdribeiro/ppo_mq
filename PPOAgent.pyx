@@ -6,7 +6,6 @@
 ##########################################################################################
 import tensorflow as tf
 import numpy as np
-import tensorflow as tf
 
 import tensorflow_probability as tfp
 
@@ -26,19 +25,18 @@ from tf_agents.networks import actor_distribution_rnn_network
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import py_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
+from tf_agents.trajectories.trajectory import Trajectory
 from tf_agents.utils import common
 from tf_agents.environments import py_environment
 
 from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
 
-
 from cpython cimport array
 import csv
 
 # TESTS
 import random
-
 
 
 LOGS_DIR =  '/tmp/'
@@ -67,6 +65,7 @@ class PPOClipped:
         self.policy_fc_layers= (16,16,16,16)
         self.actor_fc_layers = self.policy_fc_layers
         self.value_fc_layers = self.policy_fc_layers
+
         self.epsilon = GLOBAL_EPSILON
         self.gamma = GLOBAL_GAMMA
         self.epochs = GLOBAL_EPOCHS
@@ -95,6 +94,7 @@ class PPOClipped:
         with open(AGENT_FILE, mode='w') as agentLog:
             writer = csv.writer(agentLog)
             writer.writerow(['StepCounter', 'Loss'])
+
 
     def createActorNet(self):
         actor_net = actor_distribution_network.ActorDistributionNetwork(
@@ -152,6 +152,7 @@ class PPOClipped:
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
         # agent_ppo.train = common.function(agent_ppo.train)
         agent_ppo.train = common.function(agent_ppo.train, autograph=False)
+
         return agent_ppo
 
     def createReplayBuffer(self):
@@ -160,6 +161,7 @@ class PPOClipped:
             # data_spec= self.ppo_agent.policy.trajectory_spec,
             batch_size=1,
             max_length=1000)
+
         return replay_buffer
 
     def addToBuffer(self, last_time_step, last_action, current_time_step):
@@ -200,8 +202,6 @@ class PPOClipped:
                 self._eval = False
 
 
-
-
         
     def getAction(self, time_step):
         collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
@@ -227,17 +227,19 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
         self._action_spec = BoundedTensorSpec(
             shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
-        self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
-        
+        self._reward_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='reward')
+        self._discount_spec = BoundedTensorSpec(
+            shape=(8,), dtype=np.float32, minimum=0., maximum=1., name='discount')
+
         self._maxqos = maxqos
         self._minqos = minqos
         self._rewards = 0
         self._current_time_step = None
         self._action = None
-        self._discount = GLOBAL_GAMMA
+        self._discount = tf.fill((8,), GLOBAL_GAMMA, dtype=tf.float32)
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','reward'])
+            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use'])
 
         self._max_thpt = 100
         self._max_cDELAY = 10000
@@ -254,8 +256,9 @@ class MqEnvironment(py_environment.PyEnvironment):
     
     def _reset(self):
         observation_zeros = tf.zeros((8,), dtype=tf.float32)
-        reward = tf.convert_to_tensor(1, dtype=tf.float32)
-        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=1.0)
+        reward = tf.zeros((8,), dtype=tf.float32)
+        # self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy(), outer_dims=())
+        self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount.numpy())
         
         return self._current_time_step
     
@@ -266,7 +269,9 @@ class MqEnvironment(py_environment.PyEnvironment):
     def mq_step(self, action, state):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
         reward = self.get_reward(observation)
-        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount)
+        print("R: {0}".format(reward))
+        # self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount.numpy(), outer_dims=())
+        self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount.numpy())
         self._action = action
         return self._current_time_step
     
@@ -377,7 +382,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
             writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use, reward])
-        return tf.convert_to_tensor(reward, dtype=tf.float32)
+
+        rewards = np.array([r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use])
+       
+        return tf.convert_to_tensor(rewards, dtype=tf.float32)
 
     # THPT_VAR
     def r_thpt_var_lin_norm(self, thpt_var):
@@ -539,9 +547,12 @@ class PPOAgentMQ:
         self.env._current_action = self._last_action
         self._last_reward = None
         self._first_exec = True
+        print("I'm PPO!")
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format('LAST_STATE', 'LAST_TIMESTEP', 'LAST_ACTION'))
+
         
     def step(self, _new_state):
-      
         new_state = tf.convert_to_tensor(_new_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
         last_action = self._last_action
@@ -579,10 +590,12 @@ class PPOAgentMQ:
         last_action = self._last_action
         current_time_step = self.env.mq_step(last_action, last_state)
 
+        # with open(LOG_FILE, mode='a+') as logFile:
+        #     logFile.write('{}, {}, {}\n'.format(last_time_step, last_action, current_time_step))
+
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
         self.ppo_agent.addToBuffer(traj_batched)
-
         return 0
 
 
@@ -605,7 +618,6 @@ cdef public int infer(object agent , float* observation):
         state.append(observation[i])
 
     action = agent.step(state)
-
     return action
 
 cdef public void finish(object agent, float* last_state):

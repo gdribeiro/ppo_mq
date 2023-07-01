@@ -52,11 +52,11 @@ summary_writer = tf.summary.create_file_writer(tf_log_metrics_dir)
 
 MODEL_NAME = 'PPO-01'
 
-
+GLOBAL_BUFFER_SIZE = 1000
 GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 3       #3
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 4
+GLOBAL_BATCH = 2
 GLOBAL_STEPS = 32 # 128
 
 
@@ -84,8 +84,13 @@ class PPOClipped:
 
         self.batch_size = GLOBAL_BATCH
         self.num_steps = GLOBAL_STEPS
+        self.buffer_size = GLOBAL_BUFFER_SIZE
         self.replay_buffer = self.createReplayBuffer()
         self.iterator = self.createBufferIterator()
+
+        self._loss = 10000
+        self._eval = False
+        self._counter = 0
 
         with open(AGENT_FILE, mode='w') as agentLog:
             writer = csv.writer(agentLog)
@@ -134,14 +139,16 @@ class PPOClipped:
             # greedy_eval=False,
             greedy_eval=True,
             entropy_regularization=0.02,
-            value_pred_loss_coef=1.0
+            value_pred_loss_coef=1.0,
+            policy_l2_reg = 0.0,
+            value_function_l2_reg = 0.0,
+            shared_vars_l2_reg = 0.0
         )
         
         agent_ppo.initialize()
         print('ActorDistributionNetwork: {}'.format(agent_ppo.actor_net.summary()))
         print('ValueRnnNetwork: {}'.format(agent_ppo._value_net.summary()))
 
-        
         agent_ppo.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
         # agent_ppo.train = common.function(agent_ppo.train)
@@ -152,39 +159,50 @@ class PPOClipped:
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
             data_spec= self.ppo_agent.collect_policy.trajectory_spec,
             batch_size=1,
-            max_length=10000)
+            max_length=self.buffer_size)
         return replay_buffer
 
     def addToBuffer(self, traj):
         self.replay_buffer.add_batch(traj)
         
     def createBufferIterator(self):
-        n_step_update = GLOBAL_STEPS
-        batch_size = self.batch_size
         dataset = self.replay_buffer.as_dataset(
-            num_steps=n_step_update,
+            num_steps= self.num_steps,
             num_parallel_calls=3,
-            sample_batch_size=batch_size
+            sample_batch_size= self.batch_size
             ).prefetch(batch_size)
         iterator = iter(dataset)
         return iterator
 
     def train(self):
-        experience, unused_info = next(self.iterator)
-        loss, _ = self.ppo_agent.train(experience)
+        self._eval = True if self._loss < 1 else False
 
-        with open(AGENT_FILE, mode='a+', newline='') as agentLog:
-            writer = csv.writer(agentLog)
-            writer.writerow([self.train_step_counter.numpy(), loss.numpy()])
-        print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), loss.numpy()))
+        if self._eval:
+            if not (self.ppo_agent.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
+                experience, unused_info = next(self.iterator)
+                loss, _ = self.ppo_agent.train(experience)
+
+                with open(AGENT_FILE, mode='a+', newline='') as agentLog:
+                    writer = csv.writer(agentLog)
+                    writer.writerow([self.train_step_counter.numpy(), loss.numpy()])
+                print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), loss.numpy()))
+        else:
+            self._counter += 1            
+            self._eval = False if self._counter > 2000 else True
         
     def getAction(self, time_step):
-        collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
-        collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
+
+        if self._eval:
+            collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+            collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
+            action = collect_action
+        else:
+            policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+            action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
 
 
         # return self.ppo_agent.policy.action(time_step)
-        return collect_action
+        return action
     
 
 class MqEnvironment(py_environment.PyEnvironment):
@@ -294,15 +312,15 @@ class MqEnvironment(py_environment.PyEnvironment):
         #         reward = 0.1
 
         # if lst_thpt_var >= thpt_var:
-        if lst_cDELAY >= cDELAY:
-            if cDELAY <= window_time:
-                reward = 1.0
-            elif cDELAY <= (window_time * 2):
-                reward = 0.5
-            elif cDELAY <= (window_time * 4):
-                reward = 0.05
-            else:
-                reward = 0.01
+        # if lst_cDELAY >= cDELAY:
+        if cDELAY <= window_time:
+            reward = 1.0
+            # elif cDELAY <= (window_time * 2):
+            #     reward = 0.5
+            # elif cDELAY <= (window_time * 4):
+            #     reward = 0.05
+            # else:
+            #     reward = 0.01
         else:
             reward = 0.0
 

@@ -54,17 +54,17 @@ MODEL_NAME = 'PPO-01'
 
 GLOBAL_BUFFER_SIZE = 1000
 GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 3       #3
+GLOBAL_EPOCHS = 25       #3
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2
-GLOBAL_STEPS = 16 # 128
+GLOBAL_STEPS = 128 # 128
 
 
 # PPO Agent 
 class PPOClipped:
 
     def __init__(self, env):
-        self.policy_fc_layers= (8,8,16)
+        self.policy_fc_layers= (8,8,8,8)
         self.actor_fc_layers = self.policy_fc_layers
         self.value_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
@@ -115,7 +115,8 @@ class PPOClipped:
 
     def createOptimizer(self):
         learning_rate = 3e-4
-        optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
+        # optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
+        optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
         return optimizer
 
 
@@ -136,7 +137,7 @@ class PPOClipped:
             train_step_counter=self.train_step_counter,
             # greedy_eval=False,
             greedy_eval=True,
-            entropy_regularization=0.02,
+            entropy_regularization=0.01,
             value_pred_loss_coef=1.0,
             policy_l2_reg = 0.0,
             value_function_l2_reg = 0.0,
@@ -175,7 +176,7 @@ class PPOClipped:
         return iterator
 
     def train(self):
-        self._eval = True if self._loss < 1 else False
+        self._eval = True if self._loss < -1 else False
 
         if not self._eval:
             if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
@@ -320,8 +321,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         # if lst_cDELAY >= cDELAY:
         if cDELAY <= window_time:
             reward = 1.0
-            # elif cDELAY <= (window_time * 2):
-            #     reward = 0.5
+        elif cDELAY > lst_cDELAY:
+            reward = -1.0
+        elif cDELAY < lst_cDELAY:
+            reward = 0.1
             # elif cDELAY <= (window_time * 4):
             #     reward = 0.05
             # else:
@@ -332,7 +335,7 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         reward = np.round(reward * 100) / 100
         # reward = np.round(reward * 200)
-        reward = np.clip(reward, a_min=0.0, a_max=1.0)
+        # reward = np.clip(reward, a_min=-1.0, a_max=1.0)
         # print('r_thpt_glo: {}\nr_thpt_var: {}\nr_cDELAY: {}\nr_cTIMEP: {}\nr_RecSparkTotal: {}\nr_RecMQTotal: {}\nr_state: {}\nr_mem_use: {}\nReward: {}'.format(r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use, reward))
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))

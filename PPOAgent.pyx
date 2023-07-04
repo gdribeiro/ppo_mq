@@ -32,6 +32,9 @@ from tf_agents.environments import py_environment
 from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
 
+from tf_agents.agents.categorical_dqn.categorical_dqn_agent import CategoricalDqnAgent
+from tf_agents.networks.categorical_q_network import CategoricalQNetwork
+
 
 from cpython cimport array
 import csv
@@ -56,15 +59,15 @@ GLOBAL_BUFFER_SIZE = 1000
 GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 25       #3
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 2
-GLOBAL_STEPS = 128 # 128
+GLOBAL_BATCH = 1
+GLOBAL_STEPS = 1 # 128
 
 
 # PPO Agent 
 class PPOClipped:
 
     def __init__(self, env):
-        self.policy_fc_layers= (8,8,8,8)
+        self.policy_fc_layers= (64,64)
         self.actor_fc_layers = self.policy_fc_layers
         self.value_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
@@ -75,8 +78,7 @@ class PPOClipped:
         self.observation_tensor_spec = tensor_spec.from_spec(env.observation_spec())
         self.action_tensor_spec = tensor_spec.from_spec(env.action_spec())
 
-        self.actor_net = self.createActorNet()
-        self.value_net = self.createValueNet()
+        self.c_net = self.createCNet()
         self.optimizer = self.createOptimizer()
         self.train_step_counter = tf.Variable(0)
 
@@ -96,57 +98,38 @@ class PPOClipped:
             writer = csv.writer(agentLog)
             writer.writerow(['StepCounter', 'Loss'])
 
-    def createActorNet(self):
-        actor_net = actor_distribution_network.ActorDistributionNetwork(
+    def createCNet(self):
+        return CategoricalQNetwork(
             input_tensor_spec= self.observation_tensor_spec,
-            output_tensor_spec= self.action_tensor_spec,
-            fc_layer_params=self.actor_fc_layers,
-            activation_fn=tf.keras.activations.tanh,
+            action_spec= self.action_tensor_spec,
+            num_atoms=51,
+            fc_layer_params= self.policy_fc_layers
         )
-        return actor_net
-
-    def createValueNet(self):
-        value_net = value_network.ValueNetwork(
-            input_tensor_spec= self.observation_tensor_spec,
-            fc_layer_params=self.value_fc_layers,
-            activation_fn=tf.keras.activations.tanh,
-        )
-        return value_net
-
+            
     def createOptimizer(self):
         learning_rate = 3e-4
-        # optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
-        optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
+        optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
+        # optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
         return optimizer
 
 
     def createPPOAgent(self):
-        agent_ppo = ppo_clip_agent.PPOClipAgent(
-            time_step_spec=self.time_step_tensor_spec,
-            action_spec=self.action_tensor_spec,
-            actor_net=self.actor_net,
-            value_net=self.value_net,
-            optimizer=self.optimizer,
-            # normalize_observations=False,
-            # normalize_rewards=False,
-            use_td_lambda_return=True,
-            importance_ratio_clipping=self.epsilon,
-            # discount_factor=0.95,
-            num_epochs=self.epochs,
-            use_gae=True,
-            train_step_counter=self.train_step_counter,
-            # greedy_eval=False,
-            greedy_eval=True,
-            entropy_regularization=0.01,
-            value_pred_loss_coef=1.0,
-            policy_l2_reg = 0.0,
-            value_function_l2_reg = 0.0,
-            shared_vars_l2_reg = 0.0
+        print('Shit happneing before this...')
+        agent_ppo = CategoricalDqnAgent(
+            self,
+            time_step_spec= self.time_step_tensor_spec,
+            action_spec= self.action_tensor_spec,
+            categorical_q_network= self.c_net,
+            optimizer= self.optimizer,
+            n_step_update= 1,
+            td_errors_loss_fn= common.element_wise_squared_loss,
+            gamma= self.gamma,
+            reward_scale_factor= 1.0,
+            train_step_counter= self.train_step_counter
         )
         
         agent_ppo.initialize()
-        print('ActorDistributionNetwork: {}'.format(agent_ppo.actor_net.summary()))
-        print('ValueRnnNetwork: {}'.format(agent_ppo._value_net.summary()))
+       
 
         agent_ppo.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
@@ -168,7 +151,7 @@ class PPOClipped:
         
     def createBufferIterator(self):
         dataset = self.replay_buffer.as_dataset(
-            num_steps= self.num_steps,
+            num_steps= self.num_steps + 1,
             num_parallel_calls=3,
             sample_batch_size= self.batch_size
             ).prefetch(self.batch_size)
@@ -179,7 +162,7 @@ class PPOClipped:
         self._eval = True if self._loss < -1 else False
 
         if not self._eval:
-            if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
+            if not (self.replay_buffer.num_frames().numpy() > 3):
                 experience, unused_info = next(self.iterator)
                 self._loss, _ = self.ppo_agent.train(experience)
 
@@ -189,20 +172,18 @@ class PPOClipped:
                 print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), self._loss.numpy()))
 
                 # Because ON-POLICY training
-                self.replay_buffer.clear()
+                # self.replay_buffer.clear()
         else:
             self._counter += 1            
             self._eval = False if self._counter > 2000 else True
         
     def getAction(self, time_step):
         if not self._eval:
-            collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
-            collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
+            collect_action = self.ppo_agent.collect_policy.action(time_step)
             print('**TRAIN**: collect_action: {}'.format(collect_action.action.numpy()))
             action = collect_action
         else:
-            policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
-            action = self.ppo_agent.collect_policy.action(time_step, policy_state)
+            action = self.ppo_agent.collect_policy.action(time_step)
             print('**EVAL**: Action: {}'.format(action.action.numpy()))
 
         return action

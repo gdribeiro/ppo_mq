@@ -230,7 +230,8 @@ int ml_agent_master_action(int msgsize, int split_ipqueue_size, void **split_soc
 		*qosbase = *qosbase + action;
 		double cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 		// printf("Agent took %f seconds to execute \n", cpu_time_used);
-		// printf("\n Second is: %f || Last second is: %f", second, *last_second);
+		printf("\n Second is: %f || Last second is: %f", second, *last_second);
+		printf("\n Second is: %f || cpu time used: %f", second, cpu_time_used);
 		// fprintf(saqn_time_csv, "%f \t,\t %f\n", second, cpu_time_used);
 		*last_second = second;
 		last_global_avg = *global_avg_spark;
@@ -677,4 +678,5 @@ void a3c_master() {}
 void a3c_worker() {}
 void a3c_finish() {}
 
+void ppo_init() {}
 #endif

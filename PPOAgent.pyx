@@ -31,7 +31,7 @@ from tf_agents.environments import py_environment
 
 from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
-
+import timeit
 
 from cpython cimport array
 import csv
@@ -54,17 +54,19 @@ MODEL_NAME = 'PPO-01'
 
 GLOBAL_BUFFER_SIZE = 1000
 GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 25       #3
+GLOBAL_EPOCHS = 3       #3 15 25
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 2
-GLOBAL_STEPS = 128 # 128
+GLOBAL_BATCH = 2   # 2 10 20
+GLOBAL_STEPS = 20 # 20 50 128
 
+# time to take action
+# rodar por 1800 each
 
 # PPO Agent 
 class PPOClipped:
 
     def __init__(self, env):
-        self.policy_fc_layers= (8,8,8,8)
+        self.policy_fc_layers= (16,16,16,16)
         self.actor_fc_layers = self.policy_fc_layers
         self.value_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
@@ -101,22 +103,45 @@ class PPOClipped:
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
             fc_layer_params=self.actor_fc_layers,
-            activation_fn=tf.keras.activations.tanh,
+            # activation_fn=tf.keras.activations.tanh,
         )
+        args = {
+                "units": 16,
+                "return_sequences": True,
+                "return_state": True,
+                "unroll": True
+            }
+
+        # actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+        #     input_tensor_spec= self.observation_tensor_spec,
+        #     output_tensor_spec= self.action_tensor_spec,
+        #     input_fc_layer_params= None,
+        #     output_fc_layer_params= self.policy_fc_layers,
+        #     # activation_fn= tf.keras.activations.tanh,
+        #     rnn_construction_fn= tf.keras.layers.LSTM,
+        #     rnn_construction_kwargs= args
+        # )
+
         return actor_net
 
     def createValueNet(self):
         value_net = value_network.ValueNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             fc_layer_params=self.value_fc_layers,
-            activation_fn=tf.keras.activations.tanh,
+            # activation_fn=tf.keras.activations.tanh,
         )
+        # value_net = value_rnn_network.ValueRnnNetwork(
+        #     input_tensor_spec= self.observation_tensor_spec,
+        #     input_fc_layer_params= None,
+        #     output_fc_layer_params= self.policy_fc_layers,
+        #     lstm_size= (16,)
+        # )
         return value_net
 
     def createOptimizer(self):
         learning_rate = 3e-4
-        # optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
-        optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
+        optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
+        # optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
         return optimizer
 
 
@@ -145,8 +170,8 @@ class PPOClipped:
         )
         
         agent_ppo.initialize()
-        print('ActorDistributionNetwork: {}'.format(agent_ppo.actor_net.summary()))
-        print('ValueRnnNetwork: {}'.format(agent_ppo._value_net.summary()))
+        print('ActorDistributionNetwork: {}\n'.format(agent_ppo.actor_net.summary()))
+        print('ValueRnnNetwork: {}\n'.format(agent_ppo._value_net.summary()))
 
         agent_ppo.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
@@ -176,7 +201,7 @@ class PPOClipped:
         return iterator
 
     def train(self):
-        self._eval = True if self._loss < -1 else False
+        self._eval = True if self._loss < -10 else False
 
         if not self._eval:
             if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
@@ -319,12 +344,13 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         # if lst_thpt_var >= thpt_var:
         # if lst_cDELAY >= cDELAY:
-        if cDELAY <= window_time:
-            reward = 1.0
+        # if cDELAY <= window_time:
+        if cDELAY >= window_time and cDELAY <= window_time * 2:
+            reward = 100.0
         elif cDELAY > lst_cDELAY:
-            reward = -1.0
+            reward = -100.0
         elif cDELAY < lst_cDELAY:
-            reward = 0.1
+            reward = 10.0
             # elif cDELAY <= (window_time * 4):
             #     reward = 0.05
             # else:
@@ -543,7 +569,6 @@ cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
         state.append(start_state[i])
     
     return PPOAgentMQ(state, qosmax, qosmin)
-
 
 cdef public int infer(object agent , float* observation):
     state = []

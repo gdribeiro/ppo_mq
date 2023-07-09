@@ -2509,7 +2509,7 @@ static PyObject *__pyx_int_5;
 static PyObject *__pyx_int_8;
 static PyObject *__pyx_int_10;
 static PyObject *__pyx_int_16;
-static PyObject *__pyx_int_20;
+static PyObject *__pyx_int_50;
 static PyObject *__pyx_int_100;
 static PyObject *__pyx_int_1000;
 static PyObject *__pyx_int_2000;
@@ -16073,7 +16073,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitGlobals(void) {
   __pyx_int_8 = PyInt_FromLong(8); if (unlikely(!__pyx_int_8)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_10 = PyInt_FromLong(10); if (unlikely(!__pyx_int_10)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_16 = PyInt_FromLong(16); if (unlikely(!__pyx_int_16)) __PYX_ERR(0, 1, __pyx_L1_error)
-  __pyx_int_20 = PyInt_FromLong(20); if (unlikely(!__pyx_int_20)) __PYX_ERR(0, 1, __pyx_L1_error)
+  __pyx_int_50 = PyInt_FromLong(50); if (unlikely(!__pyx_int_50)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_100 = PyInt_FromLong(100); if (unlikely(!__pyx_int_100)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_1000 = PyInt_FromLong(1000); if (unlikely(!__pyx_int_1000)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_2000 = PyInt_FromLong(2000); if (unlikely(!__pyx_int_2000)) __PYX_ERR(0, 1, __pyx_L1_error)
@@ -16964,7 +16964,7 @@ if (!__Pyx_RefNanny) {
  * GLOBAL_EPOCHS = 3       #3 15 25
  * GLOBAL_GAMMA = 0.99             # <<<<<<<<<<<<<<
  * GLOBAL_BATCH = 2   # 2 10 20
- * GLOBAL_STEPS = 20 # 20 50 128
+ * GLOBAL_STEPS = 50 # 20 50 128
  */
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_GLOBAL_GAMMA, __pyx_float_0_99) < 0) __PYX_ERR(0, 58, __pyx_L1_error)
 
@@ -16972,7 +16972,7 @@ if (!__Pyx_RefNanny) {
  * GLOBAL_EPOCHS = 3       #3 15 25
  * GLOBAL_GAMMA = 0.99
  * GLOBAL_BATCH = 2   # 2 10 20             # <<<<<<<<<<<<<<
- * GLOBAL_STEPS = 20 # 20 50 128
+ * GLOBAL_STEPS = 50 # 20 50 128
  * 
  */
   if (PyDict_SetItem(__pyx_d, __pyx_n_s_GLOBAL_BATCH, __pyx_int_2) < 0) __PYX_ERR(0, 59, __pyx_L1_error)
@@ -16980,11 +16980,11 @@ if (!__Pyx_RefNanny) {
   /* "PPOAgent.pyx":60
  * GLOBAL_GAMMA = 0.99
  * GLOBAL_BATCH = 2   # 2 10 20
- * GLOBAL_STEPS = 20 # 20 50 128             # <<<<<<<<<<<<<<
+ * GLOBAL_STEPS = 50 # 20 50 128             # <<<<<<<<<<<<<<
  * 
  * # time to take action
  */
-  if (PyDict_SetItem(__pyx_d, __pyx_n_s_GLOBAL_STEPS, __pyx_int_20) < 0) __PYX_ERR(0, 60, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_d, __pyx_n_s_GLOBAL_STEPS, __pyx_int_50) < 0) __PYX_ERR(0, 60, __pyx_L1_error)
 
   /* "PPOAgent.pyx":66
  * 

@@ -57,7 +57,7 @@ GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 3       #3 15 25
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2   # 2 10 20
-GLOBAL_STEPS = 20 # 20 50 128
+GLOBAL_STEPS = 50 # 20 50 128
 
 # time to take action
 # rodar por 1800 each

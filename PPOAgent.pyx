@@ -57,7 +57,7 @@ GLOBAL_EPSILON = 0.2
 GLOBAL_EPOCHS = 3       #3 15 25
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2   # 2 10 20
-GLOBAL_STEPS = 50 # 20 50 128
+GLOBAL_STEPS = 20 # 20 50 128
 
 # time to take action
 # rodar por 1800 each
@@ -66,7 +66,7 @@ GLOBAL_STEPS = 50 # 20 50 128
 class PPOClipped:
 
     def __init__(self, env):
-        self.policy_fc_layers= (16,16,16,16)
+        self.policy_fc_layers= (8,8,8,8)
         self.actor_fc_layers = self.policy_fc_layers
         self.value_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
@@ -106,21 +106,22 @@ class PPOClipped:
             # activation_fn=tf.keras.activations.tanh,
         )
         args = {
-                "units": 16,
-                "return_sequences": True,
-                "return_state": True,
-                "unroll": True
-            }
-
-        # actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
-        #     input_tensor_spec= self.observation_tensor_spec,
-        #     output_tensor_spec= self.action_tensor_spec,
-        #     input_fc_layer_params= None,
-        #     output_fc_layer_params= self.policy_fc_layers,
-        #     # activation_fn= tf.keras.activations.tanh,
-        #     rnn_construction_fn= tf.keras.layers.LSTM,
-        #     rnn_construction_kwargs= args
-        # )
+            "units": 16,
+            "return_sequences": True,
+            "return_state": True,
+            "unroll": True,
+        }
+        
+        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+            input_tensor_spec= self.observation_tensor_spec,
+            output_tensor_spec= self.action_tensor_spec,
+            input_fc_layer_params= None,
+            output_fc_layer_params= self.policy_fc_layers,
+            activation_fn= tf.keras.activations.tanh,
+            lstm_size=(20,)
+            # rnn_construction_fn= tf.keras.layers.LSTM,
+            # rnn_construction_kwargs= args
+        )
 
         return actor_net
 
@@ -128,20 +129,19 @@ class PPOClipped:
         value_net = value_network.ValueNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             fc_layer_params=self.value_fc_layers,
-            # activation_fn=tf.keras.activations.tanh,
+            activation_fn=tf.keras.activations.tanh,
         )
-        # value_net = value_rnn_network.ValueRnnNetwork(
-        #     input_tensor_spec= self.observation_tensor_spec,
-        #     input_fc_layer_params= None,
-        #     output_fc_layer_params= self.policy_fc_layers,
-        #     lstm_size= (16,)
-        # )
+        value_net = value_rnn_network.ValueRnnNetwork(
+            input_tensor_spec= self.observation_tensor_spec,
+            input_fc_layer_params= None,
+            output_fc_layer_params= self.policy_fc_layers,
+            lstm_size=(20,)
+        )
         return value_net
 
     def createOptimizer(self):
         learning_rate = 3e-4
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
-        # optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
         return optimizer
 
 
@@ -168,7 +168,7 @@ class PPOClipped:
             value_function_l2_reg = 0.0,
             shared_vars_l2_reg = 0.0
         )
-        
+
         agent_ppo.initialize()
         print('ActorDistributionNetwork: {}\n'.format(agent_ppo.actor_net.summary()))
         print('ValueRnnNetwork: {}\n'.format(agent_ppo._value_net.summary()))
@@ -190,13 +190,13 @@ class PPOClipped:
         traj = trajectory.from_transition(last_time_step, last_action, current_time_step)
         traj_batched = tf.nest.map_structure(lambda t: tf.stack([t] * 1), traj)
         self.replay_buffer.add_batch(traj_batched)
-        
+
     def createBufferIterator(self):
         dataset = self.replay_buffer.as_dataset(
             num_steps= self.num_steps,
             num_parallel_calls=3,
             sample_batch_size= self.batch_size
-            ).prefetch(self.batch_size)
+        ).prefetch(self.batch_size)
         iterator = iter(dataset)
         return iterator
 
@@ -216,38 +216,37 @@ class PPOClipped:
                 # Because ON-POLICY training
                 self.replay_buffer.clear()
         else:
-            self._counter += 1            
+            self._counter += 1
             self._eval = False if self._counter > 2000 else True
-        
+
     def getAction(self, time_step):
         if not self._eval:
-            collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+            collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(batch_size=1)
             collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
-            print('**TRAIN**: collect_action: {}'.format(collect_action.action.numpy()))
+            print('**TRAIN**: collect_action: {}'.format(collect_action.action))
             action = collect_action
         else:
-            policy_state = self.ppo_agent.collect_policy.get_initial_state(self.batch_size)
+            policy_state = self.ppo_agent.collect_policy.get_initial_state(batch_size=1)
             action = self.ppo_agent.collect_policy.action(time_step, policy_state)
-            print('**EVAL**: Action: {}'.format(action.action.numpy()))
+            print('**EVAL**: Action: {}'.format(action.action))
 
         return action
     
 
 class MqEnvironment(py_environment.PyEnvironment):
-    
+
     def __init__(self, maxqos, minqos):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
-        self._action_spec = BoundedTensorSpec(
-            shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
+        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
-        
+
         self._maxqos = maxqos
         self._minqos = minqos
         self._rewards = 0
         self._current_time_step = None
         self._action = None
-        self._discount = GLOBAL_GAMMA
+        self._discount = tf.convert_to_tensor(GLOBAL_GAMMA, dtype=tf.float32)
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
             writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','reward'])
@@ -261,19 +260,21 @@ class MqEnvironment(py_environment.PyEnvironment):
 
     def observation_spec(self):
         return self._observation_spec
-    
+
     def reward_spec(self):
         return self._reward_spec
-    
+
     def discount_spec(self):
         return self._discount_spec
-    
+
     def _reset(self):
         observation_zeros = tf.zeros((8,), dtype=tf.float32)
         reward = tf.convert_to_tensor(1, dtype=tf.float32)
         self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount)
+        self._current_time_step = ts.TimeStep(tf.convert_to_tensor(ts.StepType.FIRST), reward, self._discount, observation_zeros)
+        print('TS {}'.format(self._current_time_step))
         return self._current_time_step
-    
+
     def _step(self, action):
         self._action = action
         return self._current_time_step
@@ -284,13 +285,13 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount)
         self._action = action
         return self._current_time_step
-    
+
     def get_reward(self, observation):
-    # [total_throughput, thpt_variation, proc_t, sche_t, msgs_to_spark, msgs_in_gb, ready_mem, spark_thresh]
+        # [total_throughput, thpt_variation, proc_t, sche_t, msgs_to_spark, msgs_in_gb, ready_mem, spark_thresh]
         thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
-                
+
         # THPT_VAR
         r_thpt_var= self.r_thpt_var_lin_norm(thpt_var)
         # THPT_GLO
@@ -318,7 +319,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         weights = np.array([0.1, 2, 10, 0.5, 0.5, 0.5, 4, 1]) # Good np.array([3, 15, 1, 10, 1])
         # weights = np.array([35, 100, 10, 50])
         reward = np.average(rewards_p, weights=weights)
-        
+
         window_time = 2000.0
 
         # if cDELAY < (window_time / 2):
@@ -345,11 +346,13 @@ class MqEnvironment(py_environment.PyEnvironment):
         # if lst_thpt_var >= thpt_var:
         # if lst_cDELAY >= cDELAY:
         # if cDELAY <= window_time:
-        if cDELAY >= window_time and cDELAY <= window_time * 2:
+        if cDELAY <= window_time * 2:
             reward = 100.0
         elif cDELAY > lst_cDELAY:
             reward = -100.0
         elif cDELAY < lst_cDELAY:
+            reward = 10.0
+        elif thpt_glo > lst_thpt_glo:
             reward = 10.0
             # elif cDELAY <= (window_time * 4):
             #     reward = 0.05
@@ -380,7 +383,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         else:
             r_thpt_var = 0
         return r_thpt_var
-    
+
     # THPT_GLO
     def r_thpt_glo_lin_norm(self, thpt_glo):
         self._max_thpt = max(self._max_thpt, thpt_glo)
@@ -402,7 +405,7 @@ class MqEnvironment(py_environment.PyEnvironment):
             r_mem_use = (mem_use - self._minqos) / (self._maxqos - self._minqos)
             r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
         return r_mem_use
-    
+
     #  MEM_USE = QoSBase
     def r_mem_use_lin_norm_Inverted(self, mem_use):
         r_mem_use = 0.0
@@ -427,7 +430,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
         r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
         return r_cDELAY
-    
+
     def r_cDELAY_lin_norm_Inverted(self, cDELAY):
         self._max_cDELAY = max(self._max_cDELAY, cDELAY)
         r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
@@ -447,13 +450,13 @@ class MqEnvironment(py_environment.PyEnvironment):
         r_cTIMEP = (cTIMEP / self._max_cTIMEP)
         r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
         return r_cTIMEP
-    
+
     def r_cTIMEP_lin_norm_Inverted(self, cTIMEP):
         self._max_cTIMEP = max(self._max_cTIMEP, cTIMEP)
         r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP)
         r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
         return r_cTIMEP
-    
+
     def r_cTIMEP_lin_norm_Inverted_avg(self, cTIMEP):
         epsilon = 1e-10
         self._max_cTIMEP = (self._max_cTIMEP + cTIMEP + epsilon) / 2
@@ -479,7 +482,7 @@ class MqEnvironment(py_environment.PyEnvironment):
             r_state = 1 - (state - self._minqos) / (self._maxqos - self._minqos)
             r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
         return r_state
-    
+
     def r_state_lin_norm_Inverted_step(self, state):
         r_state = 0.0
         if state > self._maxqos or state < self._minqos:
@@ -497,7 +500,7 @@ class MqEnvironment(py_environment.PyEnvironment):
             midpoint = (self._maxqos + self._minqos) / 2
             r_state = 1 - abs(state - midpoint) / (midpoint - self._minqos)
         return r_state
-    
+
     def r_state_lin_mid_point_step(self, state):
         r_state = 0.0
         if state > self._maxqos or state < self._minqos:
@@ -525,29 +528,36 @@ class PPOAgentMQ:
         self.buffer = False
 
         self._last_state = self.env.reset()
-        self._last_action = self.agent.getAction(self._last_state)
+        # print('Env Reset: {}'.format(self._last_state))
+        # print('TF Compat: {}'.format(self._last_state.discount.shape))
+        time_step = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), self.env.reset())
+        self._last_action = self.agent.getAction(time_step)
+        self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]),self._last_action)
+        print('Action: {}\n'.format(self._last_action))
         self._batch_size = self.agent.batch_size
         self.env._current_action = self._last_action
         self._last_reward = None
         self._first_exec = True
-        
+
     def step(self, _new_state):
-      
+
         new_state = tf.convert_to_tensor(_new_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
         current_time_step = self.env.mq_step(self._last_action, new_state)
-
-        self.agent.addToBuffer(last_time_step, self._last_action, current_time_step)
         
-        self.agent.train()
-            
-        self._last_action = self.agent.getAction(current_time_step)
-       
-        # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
-        #     action = self._last_action.action.numpy() - 1
-        action = self._last_action.action.numpy() - 1
+        self.agent.addToBuffer(last_time_step, self._last_action, current_time_step)
 
-        return action
+        self.agent.train()
+        # Needs to transform outer dimension because of tf_policy.py's _maybe_reset_state function
+        tmp_ts = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), current_time_step)
+        tmp_action = self.agent.getAction(tmp_ts)
+        self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), tmp_action)
+
+        # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
+        actions = self._last_action.action.numpy() - 1
+        # actions = self._last_action.action[0].numpy() - 1
+
+        return actions
 
     def finish(self, last_state):
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)
@@ -556,6 +566,7 @@ class PPOAgentMQ:
         self.agent.addToBuffer(last_time_step, self._last_action, current_time_step)
 
         return 0
+
 
 
 

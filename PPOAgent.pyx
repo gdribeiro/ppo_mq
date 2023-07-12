@@ -54,10 +54,10 @@ MODEL_NAME = 'PPO-01'
 
 GLOBAL_BUFFER_SIZE = 1000
 GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 3       #3 15 25
+GLOBAL_EPOCHS = 25       #3 15 25
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 2   # 2 10 20
-GLOBAL_STEPS = 50 # 20 50 128
+GLOBAL_BATCH = 10   # 2 10 20
+GLOBAL_STEPS = 20 # 20 50 128
 
 # time to take action
 # rodar por 1800 each
@@ -345,7 +345,7 @@ class MqEnvironment(py_environment.PyEnvironment):
         # if lst_thpt_var >= thpt_var:
         # if lst_cDELAY >= cDELAY:
         # if cDELAY <= window_time:
-        if cDELAY >= window_time and cDELAY <= window_time * 2:
+        if cDELAY <= window_time * 2:
             reward = 100.0
         elif cDELAY > lst_cDELAY:
             reward = -100.0

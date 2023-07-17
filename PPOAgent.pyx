@@ -54,10 +54,10 @@ MODEL_NAME = 'PPO-01'
 
 GLOBAL_BUFFER_SIZE = 1000
 GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 25       #3 15 25
+GLOBAL_EPOCHS = 3       #3 15 25
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 10   # 2 10 20
-GLOBAL_STEPS = 20 # 20 50 128
+GLOBAL_BATCH = 2   # 2 10 20
+GLOBAL_STEPS = 10 # 20 50 128
 
 # time to take action
 # rodar por 1800 each
@@ -72,6 +72,8 @@ class PPOClipped:
         self.epsilon = GLOBAL_EPSILON
         self.gamma = GLOBAL_GAMMA
         self.epochs = GLOBAL_EPOCHS
+        # self._activation = tf.keras.activations.tanh
+        self._activation = tf.keras.activations.relu
 
         self.time_step_tensor_spec = tensor_spec.from_spec(env.time_step_spec())
         self.observation_tensor_spec = tensor_spec.from_spec(env.observation_spec())
@@ -103,7 +105,7 @@ class PPOClipped:
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
             fc_layer_params=self.actor_fc_layers,
-            # activation_fn=tf.keras.activations.tanh,
+            activation_fn= self._activation,
         )
         args = {
                 "units": 16,
@@ -128,7 +130,7 @@ class PPOClipped:
         value_net = value_network.ValueNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             fc_layer_params=self.value_fc_layers,
-            # activation_fn=tf.keras.activations.tanh,
+            activation_fn= self._activation,
         )
         # value_net = value_rnn_network.ValueRnnNetwork(
         #     input_tensor_spec= self.observation_tensor_spec,
@@ -142,6 +144,27 @@ class PPOClipped:
         learning_rate = 3e-4
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         # optimizer = tf.optimizers.Nadam(learning_rate=learning_rate)
+
+        # initial_learning_rate = 3e-4
+        # end_learning_rate = 1e-5
+        # decay_steps = 135
+
+        # lr_schedule = tf.optimizers.schedules.PolynomialDecay(
+        #     initial_learning_rate,
+        #     decay_steps=decay_steps,
+        #     end_learning_rate=end_learning_rate,
+        #     power=1.0  # This makes it a linear decay
+        # )
+
+        # optimizer = tf.optimizers.Adam(learning_rate=lr_schedule)
+
+        initial_learning_rate = 3e-4
+        decay_steps = 100
+        decay_rate = 0.96
+        lr = tf.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate, decay_steps, decay_rate, staircase=True
+        )
+        optimizer = tf.optimizers.Adam(learning_rate=lr)
         return optimizer
 
 
@@ -164,8 +187,8 @@ class PPOClipped:
             greedy_eval=True,
             entropy_regularization=0.01,
             value_pred_loss_coef=1.0,
-            policy_l2_reg = 0.0,
-            value_function_l2_reg = 0.0,
+            policy_l2_reg = 0.01,
+            value_function_l2_reg = 0.01,
             shared_vars_l2_reg = 0.0
         )
         
@@ -206,7 +229,8 @@ class PPOClipped:
         if not self._eval:
             if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
                 experience, unused_info = next(self.iterator)
-                self._loss, _ = self.ppo_agent.train(experience)
+                # self._loss, _ = self.ppo_agent.train(experience)
+                self._loss, _ = self.ppo_agent.train(experience, self.train_step_counter)
 
                 with open(AGENT_FILE, mode='a+', newline='') as agentLog:
                     writer = csv.writer(agentLog)
@@ -345,12 +369,12 @@ class MqEnvironment(py_environment.PyEnvironment):
         # if lst_thpt_var >= thpt_var:
         # if lst_cDELAY >= cDELAY:
         # if cDELAY <= window_time:
-        if cDELAY <= window_time * 2:
-            reward = 100.0
-        elif cDELAY > lst_cDELAY:
-            reward = -100.0
+        if cDELAY <= window_time * 3:
+            reward = 1.0
+        # elif cDELAY > lst_cDELAY:
+        #     reward = -1.0
         elif cDELAY < lst_cDELAY:
-            reward = 10.0
+            reward = 1.0
             # elif cDELAY <= (window_time * 4):
             #     reward = 0.05
             # else:

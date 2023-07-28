@@ -53,11 +53,13 @@ AGENT_FILE = LOGS_DIR + "/log_agent.csv"
 MODEL_NAME = 'PPO-01'
 
 GLOBAL_BUFFER_SIZE = 1000
-GLOBAL_EPSILON = 0.2
-GLOBAL_EPOCHS = 3       #3 15 25
+GLOBAL_EPSILON = 0.1    # 0.1 is much more stable!
+GLOBAL_EPOCHS = 3       #3 10 - 3 is BEST
 GLOBAL_GAMMA = 0.99
-GLOBAL_BATCH = 2   # 2 10 20
-GLOBAL_STEPS = 20 # 20 50 128
+GLOBAL_BATCH = 2   # 2 small is better
+GLOBAL_STEPS = 4 # 2 is BEST
+
+global_step = 0
 
 # time to take action
 # rodar por 1800 each
@@ -66,7 +68,7 @@ GLOBAL_STEPS = 20 # 20 50 128
 class PPOClipped:
 
     def __init__(self, env):
-        self.policy_fc_layers= (8,8,8,8)
+        self.policy_fc_layers= (32,32,32,32,32)
         self.actor_fc_layers = self.policy_fc_layers
         self.value_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
@@ -96,46 +98,24 @@ class PPOClipped:
 
         with open(AGENT_FILE, mode='w') as agentLog:
             writer = csv.writer(agentLog)
-            writer.writerow(['StepCounter', 'Loss'])
+            writer.writerow(['step', 'StepCounter', 'Loss'])
 
     def createActorNet(self):
-        actor_net = actor_distribution_network.ActorDistributionNetwork(
-            input_tensor_spec= self.observation_tensor_spec,
-            output_tensor_spec= self.action_tensor_spec,
-            fc_layer_params=self.actor_fc_layers,
-            # activation_fn=tf.keras.activations.tanh,
-        )
-        args = {
-            "units": 16,
-            "return_sequences": True,
-            "return_state": True,
-            "unroll": True,
-        }
-        
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
-            activation_fn= tf.keras.activations.tanh,
-            lstm_size=(20,)
-            # rnn_construction_fn= tf.keras.layers.LSTM,
-            # rnn_construction_kwargs= args
+            lstm_size=(8,)
         )
-
         return actor_net
 
     def createValueNet(self):
-        value_net = value_network.ValueNetwork(
-            input_tensor_spec= self.observation_tensor_spec,
-            fc_layer_params=self.value_fc_layers,
-            activation_fn=tf.keras.activations.tanh,
-        )
         value_net = value_rnn_network.ValueRnnNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
-            lstm_size=(20,)
+            lstm_size=(8,)
         )
         return value_net
 
@@ -156,7 +136,7 @@ class PPOClipped:
             # normalize_rewards=False,
             use_td_lambda_return=True,
             importance_ratio_clipping=self.epsilon,
-            # discount_factor=0.95,
+            value_clipping = 0.1,
             num_epochs=self.epochs,
             use_gae=True,
             train_step_counter=self.train_step_counter,
@@ -164,9 +144,8 @@ class PPOClipped:
             greedy_eval=True,
             entropy_regularization=0.01,
             value_pred_loss_coef=1.0,
-            policy_l2_reg = 0.0,
-            value_function_l2_reg = 0.0,
-            shared_vars_l2_reg = 0.0
+            policy_l2_reg = 0.0001,
+            value_function_l2_reg = 0.0001,
         )
 
         agent_ppo.initialize()
@@ -200,7 +179,7 @@ class PPOClipped:
         iterator = iter(dataset)
         return iterator
 
-    def train(self):
+    def train(self, global_step):
         self._eval = True if self._loss < -10 else False
 
         if not self._eval:
@@ -210,25 +189,25 @@ class PPOClipped:
 
                 with open(AGENT_FILE, mode='a+', newline='') as agentLog:
                     writer = csv.writer(agentLog)
-                    writer.writerow([self.train_step_counter.numpy(), self._loss.numpy()])
+                    writer.writerow([global_step, self.train_step_counter.numpy(), self._loss.numpy()])
                 print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), self._loss.numpy()))
 
                 # Because ON-POLICY training
                 self.replay_buffer.clear()
         else:
             self._counter += 1
-            self._eval = False if self._counter > 2000 else True
+            self._eval = False if self._counter > 600 else True
 
     def getAction(self, time_step):
         if not self._eval:
             collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(batch_size=1)
             collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
-            print('**TRAIN**: collect_action: {}'.format(collect_action.action))
+            print('**TRAIN**: collect_action: {}'.format(collect_action.action.numpy()))
             action = collect_action
         else:
             policy_state = self.ppo_agent.collect_policy.get_initial_state(batch_size=1)
             action = self.ppo_agent.collect_policy.action(time_step, policy_state)
-            print('**EVAL**: Action: {}'.format(action.action))
+            print('**EVAL**: Action: {}'.format(action.action.numpy()))
 
         return action
     
@@ -237,7 +216,9 @@ class MqEnvironment(py_environment.PyEnvironment):
 
     def __init__(self, maxqos, minqos):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
-        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=-1, maximum=1, name='action')
+        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
+        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
+        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
 
@@ -249,11 +230,15 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._discount = tf.convert_to_tensor(GLOBAL_GAMMA, dtype=tf.float32)
         with open(CSV_FILE, mode='w') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow(['thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','r_thpt_glo', 'r_thpt_var', 'r_cDELAY', 'r_cTIMEP', 'r_RecSparkTotal', 'r_RecMQTotal', 'r_state', 'r_mem_use','reward'])
+            writer.writerow(['step','thpt_glo', 'thpt_var', 'cDELAY', 'cTIMEP', 'RecSparkTotal', 'RecMQTotal', 'state', 'mem_use','reward'])
 
-        self._max_thpt = 100
-        self._max_cDELAY = 10000
+        # self._max_cDELAY = 10000
+        self._max_cDELAY = 2000
         self._max_cTIMEP = 2000
+        self._avg_thpt = 0
+        self._window_time = 2000
+        self._max_thpt = 0
+
 
     def action_spec(self):
         return self._action_spec
@@ -272,253 +257,161 @@ class MqEnvironment(py_environment.PyEnvironment):
         reward = tf.convert_to_tensor(1, dtype=tf.float32)
         self._current_time_step = ts.transition(observation_zeros, reward=reward, discount=self._discount)
         self._current_time_step = ts.TimeStep(tf.convert_to_tensor(ts.StepType.FIRST), reward, self._discount, observation_zeros)
-        print('TS {}'.format(self._current_time_step))
         return self._current_time_step
 
     def _step(self, action):
         self._action = action
         return self._current_time_step
 
-    def mq_step(self, action, state):
+    def mq_step(self, action, state, global_step):
         observation = tf.convert_to_tensor(state, dtype=tf.float32)
-        reward = self.get_reward(observation)
+        reward = self.get_reward(observation, global_step)
         self._current_time_step = ts.transition(observation, reward=reward, discount=self._discount)
         self._action = action
         return self._current_time_step
 
-    def get_reward(self, observation):
+    def get_reward(self, observation, global_step):
         # [total_throughput, thpt_variation, proc_t, sche_t, msgs_to_spark, msgs_in_gb, ready_mem, spark_thresh]
         thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        # THPT_VAR
-        r_thpt_var= self.r_thpt_var_lin_norm(thpt_var)
-        # THPT_GLO
-        r_thpt_glo  = self.r_thpt_glo_lin_norm(thpt_glo)
-        # cDELAY: Scheculing Delay
-        r_cDELAY    = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
-        # cTIMEP: Processing Delay
-        r_cTIMEP    = self.r_cTIMEP_lin_norm_Inverted(r_cTIMEP)
-        # STATE
-        r_state     = self.r_state_lin_norm_Inverted(state)
-        # MEMORY USED
-        r_mem_use   = self.r_mem_use_lin_norm_Inverted(mem_use)
-        # r_RecSparkTotal
-        r_RecSparkTotal = self.r_RecSparkTotal_reward(RecSparkTotal, lst_RecSparkTotal)
-        # r_RecMQTotal
-        r_RecMQTotal =  self.r_RecMQTotal_reward(RecMQTotal, lst_RecMQTotal)
-
-
-        # rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state, r_mem_use], dtype=np.float32)
-        # rewards_p = np.array([r_thpt_glo ,r_thpt_var, r_cDELAY, r_cTIMEP, r_state, r_mem_use], dtype=np.float32)
-        rewards_p = np.array([r_thpt_glo ,r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use], dtype=np.float32)
-        # rewards_p = np.array([r_thpt_glo, r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
-        # weights = np.array([1, 15, 1, 7, 1]) # Good np.array([3, 15, 1, 10, 1])
-        # weights = np.array([1, 1, 3, 1, 1, 2]) # Good np.array([3, 15, 1, 10, 1])
-        weights = np.array([0.1, 2, 10, 0.5, 0.5, 0.5, 4, 1]) # Good np.array([3, 15, 1, 10, 1])
-        # weights = np.array([35, 100, 10, 50])
-        reward = np.average(rewards_p, weights=weights)
-
-        window_time = 2000.0
-
-        # if cDELAY < (window_time / 2):
-        #     reward = 0.5
-        # elif cDELAY <= window_time:
-        #     reward = 1.0
-        # elif cDELAY <= (window_time * 2):
-        #     reward = 0.7
-        # elif cDELAY <= (window_time * 4):
-        #     reward = 0.3
-        # elif (lst_state - state) > 0:
-        #     reward = (lst_state - state)/10000
-        # else:
-        #     reward = 0.0
-
-        # if (lst_state - state) > 0:
-        #     if reward >= 0.5:
-        #         reward += 0.2
-        #     elif reward <= 0.3:
-        #         reward += 0.1
-        #     else:
-        #         reward = 0.1
-
-        # if lst_thpt_var >= thpt_var:
-        # if lst_cDELAY >= cDELAY:
-        # if cDELAY <= window_time:
-        if cDELAY <= window_time * 2:
-            reward = 100.0
-        elif cDELAY > lst_cDELAY:
-            reward = -100.0
-        elif cDELAY < lst_cDELAY:
-            reward = 10.0
-        elif thpt_glo > lst_thpt_glo:
-            reward = 10.0
-            # elif cDELAY <= (window_time * 4):
-            #     reward = 0.05
-            # else:
-            #     reward = 0.01
-        else:
-            reward = 0.0
-
-
-        reward = np.round(reward * 100) / 100
-        # reward = np.round(reward * 200)
-        # reward = np.clip(reward, a_min=-1.0, a_max=1.0)
-        # print('r_thpt_glo: {}\nr_thpt_var: {}\nr_cDELAY: {}\nr_cTIMEP: {}\nr_RecSparkTotal: {}\nr_RecMQTotal: {}\nr_state: {}\nr_mem_use: {}\nReward: {}'.format(r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use, reward))
+        reward = self.reward_gamma(observation)
+        # reward = self.reward_beta(observation)
+        # reward = self.reward_alpha(observation)
+        
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
 
         with open(CSV_FILE, mode='a+', newline='') as csvFile:
             writer = csv.writer(csvFile)
-            writer.writerow([thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use,r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use, reward])
+            writer.writerow([global_step, thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use, reward])
         return tf.convert_to_tensor(reward, dtype=tf.float32)
 
-    # THPT_VAR
-    def r_thpt_var_lin_norm(self, thpt_var):
-        if(thpt_var > 0 ):
-            r_thpt_var = 1
-        elif(thpt_var == 0):
-            r_thpt_var = 0.5
+    def reward_gamma(self, observation): # Opotimization vars: thpt_glo,  cDELAY, cTIMEP, state
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
+        lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
+
+        reward = 0.0
+
+        if cDELAY > self._window_time or cTIMEP > self._window_time:
+            reward = self.r_state_lin_norm_cost(state)
+            if cTIMEP > self._window_time * 1.25:
+                reward = -1.0
+            elif cDELAY > self._window_time * 5:
+                reward = -1.0
+            
+            if cDELAY < lst_cDELAY:
+                # reward = reward + 0.001
+                reward = reward + 0.01
+
+        elif thpt_glo > self._avg_thpt:
+            r_cDELAY = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
+            r_cTIMEP = self.r_cTIMEP_lin_norm_Inverted_original(cTIMEP)
+            r_state  = self.r_state_lin_norm_Inverted(state)
+            rewards_p = np.array([r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
+            weights = np.array([1, 1, 1])
+            reward = np.average(rewards_p, weights=weights)
         else:
-            r_thpt_var = 0
-        return r_thpt_var
+            reward = 0.0001
 
-    # THPT_GLO
-    def r_thpt_glo_lin_norm(self, thpt_glo):
-        self._max_thpt = max(self._max_thpt, thpt_glo)
-        r_thpt_glo = thpt_glo / self._max_thpt
-        r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
-        return r_thpt_glo
+        self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
 
-    def r_thpt_glo_lin_norm_avg(self, thpt_glo):
-        self._max_thpt = (self._max_thpt + thpt_glo)/2
-        r_thpt_glo = thpt_glo / self._max_thpt
-        r_thpt_glo = np.clip(r_thpt_glo, a_min=0.0, a_max=1.0)
-        return r_thpt_glo
+        reward = np.round(reward * 1000) / 1000
+        reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+        return reward
 
-    def r_mem_use_lin_norm(self, mem_use):
-        r_mem_use = 0.0
-        if mem_use > self._maxqos or mem_use < self._minqos:
-            r_mem_use = 0.0
-        else:
-            r_mem_use = (mem_use - self._minqos) / (self._maxqos - self._minqos)
-            r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
-        return r_mem_use
-
-    #  MEM_USE = QoSBase
-    def r_mem_use_lin_norm_Inverted(self, mem_use):
-        r_mem_use = 0.0
-        if mem_use > self._maxqos or mem_use < self._minqos:
-            r_mem_use = 0.0
-        else:
-            r_mem_use = 1 - ((mem_use - self._minqos) / (self._maxqos - self._minqos))
-            r_mem_use = np.clip(r_mem_use, a_min=0.0, a_max=1.0)
-        return r_mem_use
-
-    def r_mem_use_lin_mid_point(self, mem_use):
-        r_mem_use = 0.0
-        if mem_use > self._maxqos or mem_use < self._minqos:
-            r_mem_use = 0.0
-        else:
-            midpoint = (self._maxqos + self._minqos) / 2
-            r_mem_use = 1 - abs(mem_use - midpoint) / (midpoint - self._minqos)
-        return r_mem_use
-
-    # Scheduling Delay
     def r_cDELAY_lin_norm_Inverted_original(self, cDELAY):
-        r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
+        # r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
+        r_cDELAY = (cDELAY / self._max_cDELAY)
         r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
         return r_cDELAY
 
-    def r_cDELAY_lin_norm_Inverted(self, cDELAY):
-        self._max_cDELAY = max(self._max_cDELAY, cDELAY)
-        r_cDELAY = 1 - (cDELAY / self._max_cDELAY)
-        r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
-        return r_cDELAY
-
-    def r_cDELAY_lin_norm_Inverted_avg(self, cDELAY):
-        epsilon = 1e-10
-        self._max_cDELAY = (self._max_cDELAY + cDELAY) / 2
-        r_cDELAY = 1 - (cDELAY / self._max_cDELAY + epsilon)
-        r_cDELAY = np.clip(r_cDELAY, a_min=0.0, a_max=1.0)
-        return r_cDELAY
-
-    # Processing Delay
-    def r_cTIMEP_lin_norm(self, cTIMEP):
-        self._max_cTIMEP = max(self._max_cTIMEP, cTIMEP)
-        r_cTIMEP = (cTIMEP / self._max_cTIMEP)
-        r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
-        return r_cTIMEP
-
-    def r_cTIMEP_lin_norm_Inverted(self, cTIMEP):
-        self._max_cTIMEP = max(self._max_cTIMEP, cTIMEP)
-        r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP)
-        r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
-        return r_cTIMEP
-
-    def r_cTIMEP_lin_norm_Inverted_avg(self, cTIMEP):
-        epsilon = 1e-10
-        self._max_cTIMEP = (self._max_cTIMEP + cTIMEP + epsilon) / 2
-        r_cTIMEP = 1 - (cTIMEP / self._max_cTIMEP + epsilon)
-        r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
-        return r_cTIMEP
-
-    # STATE
-    def r_state_lin_norm(self, state):
-        r_state = 0.0
-        if state > self._maxqos or state < self._minqos:
-            r_state = 0.0
+    def r_cTIMEP_lin_norm_Inverted_original(self, cTIMEP):
+        if cTIMEP > 0:
+            # r_cTIMEP = 1 - (cTIMEP / self._window_time)
+            r_cTIMEP = (cTIMEP / self._window_time)
+            r_cTIMEP = np.clip(r_cTIMEP, a_min=0.0, a_max=1.0)
+            return r_cTIMEP
         else:
-            r_state = (state - self._minqos) / (self._maxqos - self._minqos)
-            r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
+            return 0
+
+    def r_state_lin_norm_cost(self, state):
+        r_state = 0.0
+        if state > self._maxqos:
+            r_state = -1.0
+        else:
+            r_state = (state) / (self._maxqos/2)
+            r_state = r_state * -1
+            r_state = np.clip(r_state, a_min=-1.0, a_max=0.0)
         return r_state
 
     def r_state_lin_norm_Inverted(self, state):
         r_state = 0.0
-        if state > self._maxqos or state < self._minqos:
+        if state > self._maxqos:
             r_state = 0.0
         else:
             r_state = 1 - (state - self._minqos) / (self._maxqos - self._minqos)
             r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
         return r_state
 
-    def r_state_lin_norm_Inverted_step(self, state):
-        r_state = 0.0
-        if state > self._maxqos or state < self._minqos:
-            r_state = 0.0
+    def reward_alpha(self, observation): #  Optimization vars: thpt_glo, cDELAY, cTIMEP, state, mem_use
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
+        reward = -1.0
+        thpt_loss = False
+        stop = False
+
+        if thpt_glo >= self._max_thpt:
+            self._max_thpt = thpt_glo
+            stop = False
+            thpt_loss = False
         else:
-            r_state = 0.3 * (1 - (state - self._minqos) / (self._maxqos - self._minqos))
-            r_state = np.clip(r_state, a_min=0.0, a_max=0.3)
-        return r_state
+            measure = self._max_thpt - thpt_glo
+            if measure / self._max_thpt > 0.05:  # decrease is greater than 5%
+                thpt_loss = True
+            else:
+                thpt_loss = False
 
-    def r_state_lin_mid_point(self, state):
-        r_state = 0.0
-        if state > self._maxqos or state < self._minqos:
-            r_state = 0.0
-        else:
-            midpoint = (self._maxqos + self._minqos) / 2
-            r_state = 1 - abs(state - midpoint) / (midpoint - self._minqos)
-        return r_state
+        if (cDELAY > self._window_time and thpt_loss) or (state > self._maxqos) or (state > mem_use > self._minqos):
+            reward = -1.0
+        elif not stop and state >= mem_use:
+            if state > self._minqos:
+                reward = 1.0
+            elif state <= self._minqos:
+                reward = -1.0
+        elif state >= mem_use:
+            reward = -1.0
+            
+        if mem_use < self._minqos:
+            reward = -1.0
+        elif mem_use > self._maxqos:
+            reward = -1.0
 
-    def r_state_lin_mid_point_step(self, state):
-        r_state = 0.0
-        if state > self._maxqos or state < self._minqos:
-            r_state = 0.0
-        else:
-            midpoint = (self._maxqos + self._minqos) / 2
-            r_state = 1 - abs(state - midpoint) / (midpoint - self._minqos)
-            # Round to the nearest 0.2
-            r_state = round(r_state * 5) / 5
-            r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
-        return r_state
+        if cTIMEP == 0.0:
+            reward = -1.0
+        
+        reward = np.round(reward * 10000) / 10000
+        reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+        return reward
 
-    def r_RecSparkTotal_reward(self, RecSparkTotal, lst_RecSparkTotal):
-        return 1 if RecSparkTotal >= lst_RecSparkTotal else 0
+    def reward_beta(self, observation): # Optimizaitn vars: thpt_glo, cDELAY, state
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
 
-    def r_RecMQTotal_reward(self, RecMQTotal, lst_RecMQTotal):
-        return 1 if RecMQTotal >= lst_RecMQTotal else 0
+        max_cDELAY = 20000
+        min_cDELAY = 0
+        # in GB/s 300 per executor 
+        max_thpt_g = 2400
+        min_thpt_g = 0
 
+        reward = 0.0
+
+        thpt_normalized = 2 * (thpt_glo - min_thpt_g) / (max_thpt_g - min_thpt_g) -1 # normalized between [-1,1]
+        state_normalized = 2 * (self._maxqos - state) / (self._maxqos - self._minqos) -1 # normalized between [-1,1]
+        cDELAY_normalized =2 * (max_cDELAY - cDELAY) / (max_cDELAY - min_cDELAY) -1 # normalized between [-1,1]
+
+        reward =  100 * (thpt_normalized + state_normalized + cDELAY_normalized)
+
+        return reward
 
 
 class PPOAgentMQ:
@@ -526,38 +419,46 @@ class PPOAgentMQ:
         self.env = MqEnvironment(upper_limit, lower_limit)
         self.agent = PPOClipped(self.env)
         self.buffer = False
+        self.minqos = lower_limit
+        self.maxqos = upper_limit
 
         self._last_state = self.env.reset()
-        # print('Env Reset: {}'.format(self._last_state))
-        # print('TF Compat: {}'.format(self._last_state.discount.shape))
         time_step = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), self.env.reset())
         self._last_action = self.agent.getAction(time_step)
         self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]),self._last_action)
-        print('Action: {}\n'.format(self._last_action))
         self._batch_size = self.agent.batch_size
         self.env._current_action = self._last_action
         self._last_reward = None
         self._first_exec = True
 
+        self._global_step = 0
+
     def step(self, _new_state):
 
         new_state = tf.convert_to_tensor(_new_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
-        current_time_step = self.env.mq_step(self._last_action, new_state)
+        current_time_step = self.env.mq_step(self._last_action, new_state, self._global_step)
         
         self.agent.addToBuffer(last_time_step, self._last_action, current_time_step)
 
-        self.agent.train()
+        self.agent.train(self._global_step)
+        self._global_step = self._global_step + 1
         # Needs to transform outer dimension because of tf_policy.py's _maybe_reset_state function
         tmp_ts = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), current_time_step)
         tmp_action = self.agent.getAction(tmp_ts)
         self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), tmp_action)
 
         # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
-        actions = self._last_action.action.numpy() - 1
-        # actions = self._last_action.action[0].numpy() - 1
+        # action = self._last_action.action.numpy() + 1
+        # action = self._last_action.action.numpy() + self.minqos
+        # action = self._last_action.action.numpy() - 1
+        action = self._last_action.action.numpy()
+        if action < 1:
+            action = -1
+        
+        print('Action: {}'.format(action))
 
-        return actions
+        return action
 
     def finish(self, last_state):
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)

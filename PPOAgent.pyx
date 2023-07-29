@@ -50,19 +50,15 @@ AGENT_FILE = LOGS_DIR + "/log_agent.csv"
 # summary_writer = tf.summary.create_file_writer(tf_log_metrics_dir)
 
 
-MODEL_NAME = 'PPO-01'
+MODEL_NAME = 'SparkPPO'
 
-GLOBAL_BUFFER_SIZE = 1000
+GLOBAL_BUFFER_SIZE = 100
 GLOBAL_EPSILON = 0.1    # 0.1 is much more stable!
 GLOBAL_EPOCHS = 3       #3 10 - 3 is BEST
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2   # 2 small is better
-GLOBAL_STEPS = 4 # 2 is BEST
+GLOBAL_STEPS = 2 # 2 is BEST
 
-global_step = 0
-
-# time to take action
-# rodar por 1800 each
 
 # PPO Agent 
 class PPOClipped:
@@ -146,7 +142,9 @@ class PPOClipped:
             value_pred_loss_coef=1.0,
             policy_l2_reg = 0.0001,
             value_function_l2_reg = 0.0001,
+            name=MODEL_NAME
         )
+        
 
         agent_ppo.initialize()
         print('ActorDistributionNetwork: {}\n'.format(agent_ppo.actor_net.summary()))
@@ -276,9 +274,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        reward = self.reward_gamma(observation)
+        # reward = self.reward_gamma(observation)
         # reward = self.reward_beta(observation)
-        # reward = self.reward_alpha(observation)
+        reward = self.reward_alpha(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -463,7 +461,7 @@ class PPOAgentMQ:
     def finish(self, last_state):
         new_state = tf.convert_to_tensor(last_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
-        current_time_step = self.env.mq_step(self._last_action, new_state)
+        current_time_step = self.env.mq_step(self._last_action, new_state, self._global_step)
         self.agent.addToBuffer(last_time_step, self._last_action, current_time_step)
 
         return 0

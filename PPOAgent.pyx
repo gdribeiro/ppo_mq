@@ -53,7 +53,7 @@ AGENT_FILE = LOGS_DIR + "/log_agent.csv"
 MODEL_NAME = 'SparkPPO'
 
 GLOBAL_BUFFER_SIZE = 100
-GLOBAL_EPSILON = 0.1    # 0.1 is much more stable!
+GLOBAL_EPSILON = 0.2    # 0.1 is much more stable!
 GLOBAL_EPOCHS = 3       #3 10 - 3 is BEST
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2   # 2 small is better
@@ -75,10 +75,14 @@ class PPOClipped:
         self.observation_tensor_spec = tensor_spec.from_spec(env.observation_spec())
         self.action_tensor_spec = tensor_spec.from_spec(env.action_spec())
 
+        self.train_step_counter = tf.Variable(0)
         self.actor_net = self.createActorNet()
         self.value_net = self.createValueNet()
+        self.lr_schedule = self.lrSchedule()
         self.optimizer = self.createOptimizer()
-        self.train_step_counter = tf.Variable(0)
+
+        self.epsilon_schedule = tf.keras.optimizers.schedules.PolynomialDecay(GLOBAL_EPSILON,2700,0.5,power=1.0)
+
 
         self.ppo_agent = self.createPPOAgent()
 
@@ -115,9 +119,30 @@ class PPOClipped:
         )
         return value_net
 
+    def lrSchedule(self):
+        starter_learning_rate = 3e-3
+        end_learning_rate = 3e-5
+        decay_steps = 2700
+        lr_schedule = tf.keras.optimizers.schedules.PolynomialDecay(
+            starter_learning_rate,
+            decay_steps,
+            end_learning_rate,
+            power=1.0)
+        return lr_schedule
+    
+    def get_lr(self):
+        lr = self.lr_schedule(self.train_step_counter.numpy())
+        print('lr: {}\n'.format(lr))
+        return lr
+
+    def get_epsilon(self, step):
+        return self.epsilon_schedule(step)
+    
+
     def createOptimizer(self):
         learning_rate = 3e-4
-        optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
+        # optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
+        optimizer = tf.optimizers.Adam(learning_rate=self.get_lr)
         return optimizer
 
 
@@ -132,7 +157,7 @@ class PPOClipped:
             # normalize_rewards=False,
             use_td_lambda_return=True,
             importance_ratio_clipping=self.epsilon,
-            value_clipping = 0.1,
+            value_clipping = GLOBAL_EPSILON,
             num_epochs=self.epochs,
             use_gae=True,
             train_step_counter=self.train_step_counter,
@@ -192,6 +217,8 @@ class PPOClipped:
 
                 # Because ON-POLICY training
                 self.replay_buffer.clear()
+                self.ppo_agent._importance_ratio_clipping = self.get_epsilon(self.train_step_counter.numpy())
+                print('epsilon: {}'.format(self.ppo_agent._importance_ratio_clipping))
         else:
             self._counter += 1
             self._eval = False if self._counter > 600 else True
@@ -274,9 +301,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        # reward = self.reward_gamma(observation)
+        reward = self.reward_gamma(observation)
         # reward = self.reward_beta(observation)
-        reward = self.reward_alpha(observation)
+        # reward = self.reward_alpha(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))

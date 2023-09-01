@@ -102,7 +102,7 @@ class PPOClipped:
             output_tensor_spec= self.action_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
-            lstm_size=(8,)
+            lstm_size=(32,)
         )
         return actor_net
 
@@ -111,7 +111,7 @@ class PPOClipped:
             input_tensor_spec= self.observation_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
-            lstm_size=(8,)
+            lstm_size=(32,)
         )
         return value_net
 
@@ -140,8 +140,8 @@ class PPOClipped:
             greedy_eval=True,
             entropy_regularization=0.01,
             value_pred_loss_coef=1.0,
-            policy_l2_reg = 0.0001,
-            value_function_l2_reg = 0.0001,
+            policy_l2_reg = 0.001,
+            value_function_l2_reg = 0.001,
             name=MODEL_NAME
         )
         
@@ -274,9 +274,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        # reward = self.reward_gamma(observation)
-        # reward = self.reward_beta(observation)
         reward = self.reward_alpha(observation)
+        # reward = self.reward_beta(observation)
+        # reward = self.reward_gamma(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -287,31 +287,34 @@ class MqEnvironment(py_environment.PyEnvironment):
         return tf.convert_to_tensor(reward, dtype=tf.float32)
 
     def reward_gamma(self, observation): # Opotimization vars: thpt_glo,  cDELAY, cTIMEP, state
-        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
-        lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, qosbase = observation.numpy()
+        lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_qosbase = self.current_time_step().observation.numpy()
 
         reward = 0.0
 
+        # keep alive if other rewards don't apply
+        reward = 0.0001
+
         if cDELAY > self._window_time or cTIMEP > self._window_time:
+            # Reward to lower the memory usage
             reward = self.r_state_lin_norm_cost(state)
             if cTIMEP > self._window_time * 1.25:
                 reward = -1.0
-            elif cDELAY > self._window_time * 5:
+            elif cDELAY > self._window_time * 4:
                 reward = -1.0
-            
-            if cDELAY < lst_cDELAY:
-                # reward = reward + 0.001
-                reward = reward + 0.01
-
-        elif thpt_glo > self._avg_thpt:
-            r_cDELAY = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
-            r_cTIMEP = self.r_cTIMEP_lin_norm_Inverted_original(cTIMEP)
-            r_state  = self.r_state_lin_norm_Inverted(state)
-            rewards_p = np.array([r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
-            weights = np.array([1, 1, 1])
-            reward = np.average(rewards_p, weights=weights)
+            elif cDELAY <= lst_cDELAY and qosbase < state:
+            # qosbse < state means data will be processed and delay will decrease
+                reward = 1
+                
         else:
-            reward = 0.0001
+            if thpt_glo > self._avg_thpt:
+                r_cDELAY = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
+                r_cTIMEP = self.r_cTIMEP_lin_norm_Inverted_original(cTIMEP)
+                r_state  = self.r_state_lin_norm_Inverted(state)
+                rewards_p = np.array([r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
+                weights = np.array([1, 1, 1])
+                reward = np.average(rewards_p, weights=weights)
+
 
         self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
 
@@ -336,12 +339,22 @@ class MqEnvironment(py_environment.PyEnvironment):
 
     def r_state_lin_norm_cost(self, state):
         r_state = 0.0
+        min_range = self._minqos / 2
+        max_range = self._maxqos / 2
         if state > self._maxqos:
             r_state = -1.0
         else:
-            r_state = (state) / (self._maxqos/2)
-            r_state = r_state * -1
-            r_state = np.clip(r_state, a_min=-1.0, a_max=0.0)
+            # r_state = (state) / (self._maxqos/2)
+            # r_state = r_state * -1
+
+            # r_state = (state - min_range) / (max_range - min_range)
+            # r_state = 1 - r_state
+
+            r_state = (state - 1) / (max_range - 1)
+            r_state = 1 - r_state if r_state > 0 else 0
+            r_state = np.power(r_state, 3)
+
+            r_state = np.clip(r_state, a_min=-1.0, a_max=1.0)
         return r_state
 
     def r_state_lin_norm_Inverted(self, state):
@@ -357,7 +370,6 @@ class MqEnvironment(py_environment.PyEnvironment):
         thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
         reward = -1.0
         thpt_loss = False
-        stop = False
 
         if thpt_glo >= self._max_thpt:
             self._max_thpt = thpt_glo
@@ -372,7 +384,7 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         if (cDELAY > self._window_time and thpt_loss) or (state > self._maxqos) or (state > mem_use > self._minqos):
             reward = -1.0
-        elif not stop and state >= mem_use:
+        elif state >= mem_use:
             if state > self._minqos:
                 reward = 1.0
             elif state <= self._minqos:

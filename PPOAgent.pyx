@@ -216,7 +216,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
-        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
+        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
+        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=6, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
 
@@ -274,9 +275,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        reward = self.reward_alpha(observation)
+        # reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
-        # reward = self.reward_gamma(observation)
+        reward = self.reward_gamma(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -339,8 +340,10 @@ class MqEnvironment(py_environment.PyEnvironment):
 
     def r_state_lin_norm_cost(self, state):
         r_state = 0.0
-        min_range = self._minqos / 2
-        max_range = self._maxqos / 2
+        # min_range = self._minqos / 2
+        min_range = self._minqos
+        # max_range = self._maxqos / 2
+        max_range = self._maxqos
         if state > self._maxqos:
             r_state = -1.0
         else:
@@ -360,7 +363,7 @@ class MqEnvironment(py_environment.PyEnvironment):
     def r_state_lin_norm_Inverted(self, state):
         r_state = 0.0
         if state > self._maxqos:
-            r_state = 0.0
+            r_state = -1.0
         else:
             r_state = 1 - (state - self._minqos) / (self._maxqos - self._minqos)
             r_state = np.clip(r_state, a_min=0.0, a_max=1.0)
@@ -463,8 +466,8 @@ class PPOAgentMQ:
         # action = self._last_action.action.numpy() + self.minqos
         # action = self._last_action.action.numpy() - 1
         action = self._last_action.action.numpy()
-        if action < 1:
-            action = -1
+        # if action < 1:
+        #     action = -1
         
         print('Action: {}'.format(action))
 

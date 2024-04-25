@@ -102,7 +102,6 @@ class PPOClipped:
             output_tensor_spec= self.action_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
-            lstm_size=(32,)
         )
         return actor_net
 
@@ -111,7 +110,6 @@ class PPOClipped:
             input_tensor_spec= self.observation_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
-            lstm_size=(32,)
         )
         return value_net
 

@@ -454,10 +454,14 @@ class PPOAgentMQ:
 
         self.agent.train(self._global_step)
         self._global_step = self._global_step + 1
+
         # Needs to transform outer dimension because of tf_policy.py's _maybe_reset_state function
-        tmp_ts = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), current_time_step)
+        # tmp_ts = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), current_time_step)
+        tmp_ts = current_time_step
+
         tmp_action = self.agent.getAction(tmp_ts)
-        self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), tmp_action)
+        # self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), tmp_action)
+        self._last_action = tmp_action
 
         # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
         # action = self._last_action.action.numpy() + 1

@@ -10,7 +10,6 @@ import tensorflow as tf
 
 import tensorflow_probability as tfp
 
-from tf_agents.agents.ppo import ppo_clip_agent
 from tf_agents.specs import tensor_spec
 from tf_agents.specs import array_spec
 from tf_agents.specs import BoundedTensorSpec
@@ -18,11 +17,8 @@ from tf_agents.specs import TensorSpec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 
-from tf_agents import networks
-from tf_agents.networks import value_network
-from tf_agents.networks import value_rnn_network
-from tf_agents.networks import actor_distribution_network
-from tf_agents.networks import actor_distribution_rnn_network
+from tf_agents.agents.dqn import dqn_agent
+from tf_agents.networks import q_network
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import py_uniform_replay_buffer
 from tf_agents.trajectories import trajectory

@@ -71,8 +71,7 @@ class PPOClipped:
         self.observation_tensor_spec = tensor_spec.from_spec(env.observation_spec())
         self.action_tensor_spec = tensor_spec.from_spec(env.action_spec())
 
-        self.actor_net = self.createActorNet()
-        self.value_net = self.createValueNet()
+        self.actor_net = self.createQNet()
         self.optimizer = self.createOptimizer()
         self.train_step_counter = tf.Variable(0)
 
@@ -92,22 +91,15 @@ class PPOClipped:
             writer = csv.writer(agentLog)
             writer.writerow(['step', 'StepCounter', 'Loss'])
 
-    def createActorNet(self):
-        actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+    def createQNet(self):
+        q_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             output_tensor_spec= self.action_tensor_spec,
             input_fc_layer_params= None,
             output_fc_layer_params= self.policy_fc_layers,
         )
-        return actor_net
+        return q_net
 
-    def createValueNet(self):
-        value_net = value_rnn_network.ValueRnnNetwork(
-            input_tensor_spec= self.observation_tensor_spec,
-            input_fc_layer_params= None,
-            output_fc_layer_params= self.policy_fc_layers,
-        )
-        return value_net
 
     def createOptimizer(self):
         learning_rate = 3e-4

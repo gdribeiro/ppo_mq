@@ -18,6 +18,7 @@ from tf_agents.specs import TensorSpec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 
+
 from tf_agents import networks
 from tf_agents.networks import value_network
 from tf_agents.networks import value_rnn_network
@@ -29,6 +30,7 @@ from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 from tf_agents.environments import py_environment
 
+from tf_agents.policies.policy_saver import PolicySaver
 from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
 import timeit
@@ -95,6 +97,16 @@ class PPOClipped:
         with open(AGENT_FILE, mode='w') as agentLog:
             writer = csv.writer(agentLog)
             writer.writerow(['step', 'StepCounter', 'Loss'])
+
+
+    def save(self):
+        policy_saver = PolicySaver(self.ppo_agent.policy)
+
+        # Specify the directory where the policy will be saved
+        policy_dir = '/model/'
+
+        # Save the policy
+        policy_saver.save(policy_dir)
 
     def createActorNet(self):
         actor_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
@@ -179,6 +191,7 @@ class PPOClipped:
 
     def train(self, global_step):
         self._eval = True if self._loss < -10 else False
+        save_policy = True if self._loss < 1 else False
 
         if not self._eval:
             if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
@@ -195,6 +208,9 @@ class PPOClipped:
         else:
             self._counter += 1
             self._eval = False if self._counter > 600 else True
+
+        if save_policy:
+            self.save()
 
     def getAction(self, time_step):
         if not self._eval:
@@ -277,7 +293,8 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         # reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
-        reward = self.reward_gamma(observation)
+        # reward = self.reward_gamma(observation)
+        reward = self.reward_omega(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -426,6 +443,21 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         return reward
 
+    def reward_omega(self, observation): # Opotimization vars: thpt_glo,  cDELAY, cTIMEP, state
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, qosbase = observation.numpy()
+        lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_qosbase = self.current_time_step().observation.numpy()
+
+        reward = 0.0
+        
+        if cDELAY > self._window_time or cTIMEP > self._window_time:
+            # Reward to lower the memory usage
+            if state < lst_state:
+                reward = 1.00
+        elif thpt_glo > self._avg_thpt:
+            reward = 1.0
+        self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
+        return reward
+
 
 class PPOAgentMQ:
     def __init__(self, start_state, upper_limit, lower_limit):
@@ -493,7 +525,11 @@ cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
     for i in range(8):
         state.append(start_state[i])
     
-    return PPOAgentMQ(state, qosmax, qosmin)
+    # return PPOAgentMQ(state, qosmax, qosmin)
+    agent = PPOAgentMQ(state, qosmax, qosmin)
+    agent.step(state)
+
+    return agent
 
 cdef public int infer(object agent , float* observation):
     state = []

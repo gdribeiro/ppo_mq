@@ -75,7 +75,7 @@ class PPOClipped:
         self.optimizer = self.createOptimizer()
         self.train_step_counter = tf.Variable(0)
 
-        self.ppo_agent = self.createPPOAgent()
+        self.ppo_agent = self.createQAgent()
 
         self.batch_size = GLOBAL_BATCH
         self.num_steps = GLOBAL_STEPS
@@ -92,11 +92,10 @@ class PPOClipped:
             writer.writerow(['step', 'StepCounter', 'Loss'])
 
     def createQNet(self):
-        q_net = actor_distribution_rnn_network.ActorDistributionRnnNetwork(
+        q_net = q_network.QNetwork(
             input_tensor_spec= self.observation_tensor_spec,
-            output_tensor_spec= self.action_tensor_spec,
-            input_fc_layer_params= None,
-            output_fc_layer_params= self.policy_fc_layers,
+            action_spec= self.action_tensor_spec,
+            fc_layer_params= self.policy_fc_layers,
         )
         return q_net
 
@@ -107,40 +106,24 @@ class PPOClipped:
         return optimizer
 
 
-    def createPPOAgent(self):
-        agent_ppo = ppo_clip_agent.PPOClipAgent(
+    def createQAgent(self):
+        q_agent = dqn_agent.DqnAgent(
             time_step_spec=self.time_step_tensor_spec,
             action_spec=self.action_tensor_spec,
-            actor_net=self.actor_net,
-            value_net=self.value_net,
+            q_network=self.actor_net,
             optimizer=self.optimizer,
-            # normalize_observations=False,
-            # normalize_rewards=False,
-            use_td_lambda_return=True,
-            importance_ratio_clipping=self.epsilon,
-            value_clipping = 0.1,
-            num_epochs=self.epochs,
-            use_gae=True,
+            td_errors_loss_fn=common.element_wise_squared_loss,
             train_step_counter=self.train_step_counter,
-            # greedy_eval=False,
-            greedy_eval=True,
-            entropy_regularization=0.01,
-            value_pred_loss_coef=1.0,
-            policy_l2_reg = 0.001,
-            value_function_l2_reg = 0.001,
-            name=MODEL_NAME
         )
-        
+        q_agent.initialize()
+        print('ActorDistributionNetwork: {}\n'.format(q_agent.actor_net.summary()))
+        # print('ValueRnnNetwork: {}\n'.format(q_agent._value_net.summary()))
 
-        agent_ppo.initialize()
-        print('ActorDistributionNetwork: {}\n'.format(agent_ppo.actor_net.summary()))
-        print('ValueRnnNetwork: {}\n'.format(agent_ppo._value_net.summary()))
-
-        agent_ppo.train_step_counter.assign(0)
+        q_agent.train_step_counter.assign(0)
         # (Optional) Optimize by wrapping some of this code in a graph using TF function.
-        # agent_ppo.train = common.function(agent_ppo.train)
-        agent_ppo.train = common.function(agent_ppo.train, autograph=False)
-        return agent_ppo
+        # q_agent.train = common.function(q_agent.train)
+        q_agent.train = common.function(q_agent.train, autograph=False)
+        return q_agent
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
@@ -261,9 +244,9 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        # reward = self.reward_alpha(observation)
+        reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
-        reward = self.reward_gamma(observation)
+        # reward = self.reward_gamma(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))

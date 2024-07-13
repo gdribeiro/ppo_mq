@@ -31,6 +31,11 @@ from tf_agents.utils import common
 from tf_agents.environments import py_environment
 
 from tf_agents.policies.policy_saver import PolicySaver
+import os
+from tensorflow.python.saved_model import save_options
+
+
+
 from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
 import timeit
@@ -47,6 +52,7 @@ LOGS_DIR =  '/tmp/'
 CSV_FILE = LOGS_DIR + "/log_rewards.csv"
 LOG_FILE = LOGS_DIR + "/log_general.log"
 AGENT_FILE = LOGS_DIR + "/log_agent.csv"
+MODEL_DIR = LOGS_DIR + "/model/"
 
 # tf_log_metrics_dir = LOGS_DIR + "/tf-metrics"
 # summary_writer = tf.summary.create_file_writer(tf_log_metrics_dir)
@@ -103,7 +109,12 @@ class PPOClipped:
         policy_saver = PolicySaver(self.ppo_agent.policy)
 
         # Specify the directory where the policy will be saved
-        policy_dir = '/model/'
+        # Change '/model/' to a directory within the user's home directory, for example
+        policy_dir = MODEL_DIR
+
+        # Ensure the directory exists
+        if not os.path.exists(policy_dir):
+            os.makedirs(policy_dir)
 
         # Save the policy
         policy_saver.save(policy_dir)
@@ -211,6 +222,7 @@ class PPOClipped:
 
         if save_policy:
             self.save()
+            
 
     def getAction(self, time_step):
         if not self._eval:
@@ -329,14 +341,21 @@ class MqEnvironment(py_environment.PyEnvironment):
                 r_cDELAY = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
                 r_cTIMEP = self.r_cTIMEP_lin_norm_Inverted_original(cTIMEP)
                 r_state  = self.r_state_lin_norm_Inverted(state)
-                rewards_p = np.array([r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
-                weights = np.array([1, 1, 1])
+                
+                
+                thpt_increase = thpt_glo - self._avg_thpt
+                normalized_increase = thpt_increase / self._avg_thpt
+                normalized_increase = np.clip(normalized_increase, a_min=0.0, a_max=1.0)
+
+
+                rewards_p = np.array([r_cDELAY, r_cTIMEP, r_state, normalized_increase], dtype=np.float32)
+                weights = np.array([1, 1, 1, 4])
                 reward = np.average(rewards_p, weights=weights)
 
 
         self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
 
-        reward = np.round(reward * 1000) / 1000
+        reward = np.round(reward * 10) / 10
         reward = np.clip(reward, a_min=-1.0, a_max=1.0)
         return reward
 
@@ -454,7 +473,13 @@ class MqEnvironment(py_environment.PyEnvironment):
             if state < lst_state:
                 reward = 1.00
         elif thpt_glo > self._avg_thpt:
-            reward = 1.0
+            # reward = 1.0
+            r_cDELAY = self.r_cDELAY_lin_norm_Inverted_original(cDELAY)
+            r_cTIMEP = self.r_cTIMEP_lin_norm_Inverted_original(cTIMEP)
+            r_state  = self.r_state_lin_norm_Inverted(state)
+            rewards_p = np.array([r_cDELAY, r_cTIMEP, r_state], dtype=np.float32)
+            weights = np.array([1, 1, 1])
+            reward = np.average(rewards_p, weights=weights)
         self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
         return reward
 

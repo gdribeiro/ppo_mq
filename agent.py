@@ -19,6 +19,7 @@ from tf_agents.environments import tf_py_environment
 
 from tf_agents.agents.dqn import dqn_agent
 from tf_agents.networks import q_network
+from tf_agents.networks import q_rnn_network
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.replay_buffers import py_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
@@ -29,7 +30,6 @@ from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
 import timeit
 
-from cpython cimport array
 import csv
 
 # TESTS
@@ -53,16 +53,15 @@ GLOBAL_EPSILON = 0.1    # 0.1 is much more stable!
 GLOBAL_EPOCHS = 3       #3 10 - 3 is BEST
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2   # 2 small is better
-GLOBAL_STEPS = 2 # 2 is BEST
+GLOBAL_STEPS = 1 # 2 is BEST
 
 
 # PPO Agent 
-class PPOClipped:
+class Agent:
 
     def __init__(self, env):
         self.policy_fc_layers= (32,32,32,32,32)
-        self.actor_fc_layers = self.policy_fc_layers
-        self.value_fc_layers = self.policy_fc_layers
+        self.q_fc_layers = self.policy_fc_layers
         self.epsilon = GLOBAL_EPSILON
         self.gamma = GLOBAL_GAMMA
         self.epochs = GLOBAL_EPOCHS
@@ -71,11 +70,11 @@ class PPOClipped:
         self.observation_tensor_spec = tensor_spec.from_spec(env.observation_spec())
         self.action_tensor_spec = tensor_spec.from_spec(env.action_spec())
 
-        self.actor_net = self.createQNet()
+        self.q_net = self.createQNet()
         self.optimizer = self.createOptimizer()
         self.train_step_counter = tf.Variable(0)
 
-        self.ppo_agent = self.createQAgent()
+        self.q_agent = self.createQAgent()
 
         self.batch_size = GLOBAL_BATCH
         self.num_steps = GLOBAL_STEPS
@@ -95,41 +94,45 @@ class PPOClipped:
         q_net = q_network.QNetwork(
             input_tensor_spec= self.observation_tensor_spec,
             action_spec= self.action_tensor_spec,
-            fc_layer_params=self.actor_fc_layers,
+            fc_layer_params=self.q_fc_layers
+        )
+        q_net = q_rnn_network.QRnnNetwork(
+            input_tensor_spec=self.observation_tensor_spec,
+            action_spec=self.action_tensor_spec,
+            input_fc_layer_params=None,
+            output_fc_layer_params=self.q_fc_layers,
+            lstm_size=(32,),
         )
         return q_net
-
 
     def createOptimizer(self):
         learning_rate = 3e-4
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         return optimizer
 
-
     def createQAgent(self):
         q_agent = dqn_agent.DqnAgent(
             time_step_spec=self.time_step_tensor_spec,
             action_spec=self.action_tensor_spec,
-            q_network=self.actor_net,
+            q_network=self.q_net,
             optimizer=self.optimizer,
             td_errors_loss_fn=common.element_wise_squared_loss,
-            train_step_counter=self.train_step_counter,
+            # td_errors_loss_fn=common.element_wise_squared_loss,
+            train_step_counter=self.train_step_counter
         )
         q_agent.initialize()
-        print('ActorDistributionNetwork: {}\n'.format(q_agent._q_network()))
-        # print('ValueRnnNetwork: {}\n'.format(q_agent._value_net.summary()))
-
-        q_agent.train_step_counter.assign(0)
-        # (Optional) Optimize by wrapping some of this code in a graph using TF function.
-        # q_agent.train = common.function(q_agent.train)
+        print('Q Network: {}\n'.format(q_agent._q_network.summary()))
+        # print('Q Network: {}\n'.format(q_agent._q_network.get_layer(1)))
         q_agent.train = common.function(q_agent.train, autograph=False)
+        q_agent.train_step_counter.assign(0)
         return q_agent
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
-            data_spec= self.ppo_agent.collect_policy.trajectory_spec,
+            data_spec= self.q_agent.collect_policy.trajectory_spec,
             batch_size=1,
-            max_length=self.buffer_size)
+            max_length=self.buffer_size
+        )
         return replay_buffer
 
     def addToBuffer(self, last_time_step, last_action, current_time_step):
@@ -139,7 +142,6 @@ class PPOClipped:
 
     def createBufferIterator(self):
         dataset = self.replay_buffer.as_dataset(
-            num_steps= self.num_steps,
             num_parallel_calls=3,
             sample_batch_size= self.batch_size
         ).prefetch(self.batch_size)
@@ -147,34 +149,20 @@ class PPOClipped:
         return iterator
 
     def train(self, global_step):
-        self._eval = True if self._loss < -10 else False
+        if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
+            experience, unused_info = next(self.iterator)
+            self._loss, _ = self.q_agent.train(experience)
 
-        if not self._eval:
-            if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
-                experience, unused_info = next(self.iterator)
-                self._loss, _ = self.ppo_agent.train(experience)
-
-                with open(AGENT_FILE, mode='a+', newline='') as agentLog:
-                    writer = csv.writer(agentLog)
-                    writer.writerow([global_step, self.train_step_counter.numpy(), self._loss.numpy()])
-                print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), self._loss.numpy()))
-
-                # Because ON-POLICY training
-                self.replay_buffer.clear()
-        else:
-            self._counter += 1
-            self._eval = False if self._counter > 600 else True
+            with open(AGENT_FILE, mode='a+', newline='') as agentLog:
+                writer = csv.writer(agentLog)
+                writer.writerow([global_step, self.train_step_counter.numpy(), self._loss.numpy()])
+            print('TrainStep: {},\t LOSS: {}\n'.format(self.train_step_counter.numpy(), self._loss.numpy()))
 
     def getAction(self, time_step):
-        if not self._eval:
-            collect_policy_state = self.ppo_agent.collect_policy.get_initial_state(batch_size=1)
-            collect_action = self.ppo_agent.collect_policy.action(time_step, collect_policy_state)
-            print('**TRAIN**: collect_action: {}'.format(collect_action.action.numpy()))
-            action = collect_action
-        else:
-            policy_state = self.ppo_agent.collect_policy.get_initial_state(batch_size=1)
-            action = self.ppo_agent.collect_policy.action(time_step, policy_state)
-            print('**EVAL**: Action: {}'.format(action.action.numpy()))
+        time_step = tf.nest.map_structure(lambda t: tf.stack([t] * 1), time_step)
+        print(time_step)
+        action = self.q_agent.collect_policy.action(time_step)
+        print('**EVAL**: Action: {}'.format(action.action.numpy()))
 
         return action
     
@@ -399,7 +387,7 @@ class MqEnvironment(py_environment.PyEnvironment):
 class PPOAgentMQ:
     def __init__(self, start_state, upper_limit, lower_limit):
         self.env = MqEnvironment(upper_limit, lower_limit)
-        self.agent = PPOClipped(self.env)
+        self.agent = Agent(self.env)
         self.buffer = False
         self.minqos = lower_limit
         self.maxqos = upper_limit
@@ -434,13 +422,8 @@ class PPOAgentMQ:
         # self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), tmp_action)
         self._last_action = tmp_action
 
-        # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
-        # action = self._last_action.action.numpy() + 1
-        # action = self._last_action.action.numpy() + self.minqos
-        # action = self._last_action.action.numpy() - 1
+      
         action = self._last_action.action.numpy()
-        # if action < 1:
-        #     action = -1
         
         print('Action: {}'.format(action))
 
@@ -456,30 +439,18 @@ class PPOAgentMQ:
 
 
 
-
 ##########################################################################################
-# Cython API
+# Pure Python API
 ##########################################################################################
 
-cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
-    state = []
-    for i in range(8):
-        state.append(start_state[i])
-    
-    return PPOAgentMQ(state, qosmax, qosmin)
+def createPPOAgent(start_state, qosmin, qosmax):
+    return PPOAgentMQ(start_state, qosmax, qosmin)
 
-cdef public int infer(object agent , float* observation):
-    state = []
-    for i in range(8):
-        state.append(observation[i])
-
-    action = agent.step(state)
-
+def infer(agent, observation):
+    action = agent.step(observation)
     return action
 
-cdef public void finish(object agent, float* last_state):
-    state = []
-    for i in range(8):
-        state.append(last_state[i])
-    
-    agent.finish(state)
+def finish(agent, last_state):
+    agent.finish(last_state)
+
+

@@ -3330,7 +3330,7 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOClipped_2createQNet(CYTHON_UNUSED PyObj
  *         q_net = q_network.QNetwork(
  *             input_tensor_spec= self.observation_tensor_spec,             # <<<<<<<<<<<<<<
  *             action_spec= self.action_tensor_spec,
- *             fc_layer_params= self.policy_fc_layers,
+ *             fc_layer_params=self.actor_fc_layers,
  */
   __pyx_t_1 = __Pyx_PyDict_NewPresized(3); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 96, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
@@ -3343,7 +3343,7 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOClipped_2createQNet(CYTHON_UNUSED PyObj
  *         q_net = q_network.QNetwork(
  *             input_tensor_spec= self.observation_tensor_spec,
  *             action_spec= self.action_tensor_spec,             # <<<<<<<<<<<<<<
- *             fc_layer_params= self.policy_fc_layers,
+ *             fc_layer_params=self.actor_fc_layers,
  *         )
  */
   __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_v_self, __pyx_n_s_action_tensor_spec); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 97, __pyx_L1_error)
@@ -3354,11 +3354,11 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOClipped_2createQNet(CYTHON_UNUSED PyObj
   /* "PPOAgent.pyx":98
  *             input_tensor_spec= self.observation_tensor_spec,
  *             action_spec= self.action_tensor_spec,
- *             fc_layer_params= self.policy_fc_layers,             # <<<<<<<<<<<<<<
+ *             fc_layer_params=self.actor_fc_layers,             # <<<<<<<<<<<<<<
  *         )
  *         return q_net
  */
-  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_v_self, __pyx_n_s_policy_fc_layers); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 98, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_v_self, __pyx_n_s_actor_fc_layers); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 98, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   if (PyDict_SetItem(__pyx_t_1, __pyx_n_s_fc_layer_params, __pyx_t_3) < 0) __PYX_ERR(0, 96, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
@@ -3378,7 +3378,7 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOClipped_2createQNet(CYTHON_UNUSED PyObj
   __pyx_t_3 = 0;
 
   /* "PPOAgent.pyx":100
- *             fc_layer_params= self.policy_fc_layers,
+ *             fc_layer_params=self.actor_fc_layers,
  *         )
  *         return q_net             # <<<<<<<<<<<<<<
  * 

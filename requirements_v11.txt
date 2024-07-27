@@ -1,0 +1,16 @@
+gym==0.23.0
+tensorflow
+tf-keras
+dm-reverb
+tf-agents
+numpy
+tensorflow-probability
+keras
+tensorboard
+Cython
+scipy
+matplotlib
+absl-py
+jupyter  # Add this for Jupyter Notebook
+jupyterlab  # Optional: Add this for JupyterLab
+ipython  # Add this for IPython support

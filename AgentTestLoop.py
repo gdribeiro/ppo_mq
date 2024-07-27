@@ -8,7 +8,11 @@ def main(qosmin, qosmax):
 
     agent = createPPOAgent(start_state, qosmin, qosmax)
 
+<<<<<<< HEAD
     for _ in range(5):
+=======
+    for _ in range(10):
+>>>>>>> dqn-lstm
         print("#" * 20)
         print(f"Step: {_}")
         print("#" * 20)

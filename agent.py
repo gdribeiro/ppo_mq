@@ -96,13 +96,6 @@ class Agent:
         q_net = q_rnn_network.QRnnNetwork(
             input_tensor_spec=self.observation_tensor_spec,
             action_spec=self.action_tensor_spec,
-            input_fc_layer_params=None,
-            output_fc_layer_params=self.q_fc_layers,
-            lstm_size=(32,)
-        )
-        q_net = q_rnn_network.QRnnNetwork(
-            input_tensor_spec=self.observation_tensor_spec,
-            action_spec=self.action_tensor_spec,
             input_fc_layer_params=self.q_fc_layers,
             output_fc_layer_params=self.q_fc_layers,
             lstm_size=(32,)
@@ -121,13 +114,14 @@ class Agent:
         return optimizer
 
     def createQAgent(self):
-        print('TimeStepSpec: {}\n'.format(self.time_step_tensor_spec))
+        # print('TimeStepSpec: {}\n'.format(self.time_step_tensor_spec))
         q_agent = dqn_agent.DqnAgent(
             time_step_spec=self.time_step_tensor_spec,
             action_spec=self.action_tensor_spec,
             q_network=self.q_net,
             optimizer=self.optimizer,
             td_errors_loss_fn=common.element_wise_squared_loss,
+            # td_errors_loss_fn=common.element_wise_squared_loss,
             train_step_counter=self.train_step_counter
         )
         q_agent.initialize()
@@ -177,9 +171,11 @@ class Agent:
         policy_state = self.q_agent.policy.get_initial_state(batch_size=1)
         action = self.q_agent.policy.action(time_step, policy_state)
 
-        # print('PolicyStep: {}'.format(action))
+        # print('Action: {}'.format(action))
+        # print('Action: {}'.format(action.action.numpy()))
+
         action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), action)
-        # print('PolicyStepSqueezed: {}'.format(action))
+        # print('Action: {}'.format(action))
         return action
     
 
@@ -429,6 +425,7 @@ class PPOAgentMQ:
         new_state = tf.convert_to_tensor(_new_state, dtype=tf.float32)
         last_time_step = self.env.current_time_step()
         current_time_step = self.env.mq_step(self._last_action, new_state, self._global_step)
+        # print('Last Action: {}\n'.format(self._last_action))
         self.agent.addToBuffer(last_time_step, self._last_action, current_time_step)
 
         self.agent.train(self._global_step)
@@ -456,30 +453,18 @@ class PPOAgentMQ:
         return 0
 
 
-
 ##########################################################################################
-# Cython API
+# Pure Python API
 ##########################################################################################
 
-cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
-    state = []
-    for i in range(8):
-        state.append(start_state[i])
-    
-    return PPOAgentMQ(state, qosmax, qosmin)
+def createPPOAgent(start_state, qosmin, qosmax):
+    return PPOAgentMQ(start_state, qosmax, qosmin)
 
-cdef public int infer(object agent , float* observation):
-    state = []
-    for i in range(8):
-        state.append(observation[i])
-
-    action = agent.step(state)
-
+def infer(agent, observation):
+    action = agent.step(observation)
     return action
 
-cdef public void finish(object agent, float* last_state):
-    state = []
-    for i in range(8):
-        state.append(last_state[i])
-    
-    agent.finish(state)
+def finish(agent, last_state):
+    agent.finish(last_state)
+
+

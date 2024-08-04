@@ -8,7 +8,7 @@ def main(qosmin, qosmax):
 
     agent = createPPOAgent(start_state, qosmin, qosmax)
 
-    for _ in range(10):
+    for _ in range(1000):
         print("#" * 20)
         print(f"Step: {_}")
         print("#" * 20)

@@ -47,14 +47,14 @@ CSV_FILE = LOGS_DIR + "/log_rewards.csv"
 LOG_FILE = LOGS_DIR + "/log_general.log"
 AGENT_FILE = LOGS_DIR + "/log_agent.csv"
 
-MODEL_NAME = 'DQN-FNN'
+MODEL_NAME = 'DQN-LSTM-FullBuffer'
 
-GLOBAL_BUFFER_SIZE = 100
+GLOBAL_BUFFER_SIZE = 200
 GLOBAL_EPSILON = 0.1    # 0.1 is much more stable!
 GLOBAL_EPOCHS = 3       #3 10 - 3 is BEST
 GLOBAL_GAMMA = 0.99
 GLOBAL_BATCH = 2   # 2 small is better
-GLOBAL_STEPS = 1 # 2 is BEST
+GLOBAL_STEPS = 2 # 2 is BEST
 ##########################################################################################
 
 # DQN Agent 
@@ -93,30 +93,32 @@ class Agent:
             writer.writerow(['step', 'StepCounter', 'Loss'])
 
     def createQNet(self):
-        q_net = q_rnn_network.QRnnNetwork(
-            input_tensor_spec=self.observation_tensor_spec,
-            action_spec=self.action_tensor_spec,
-            input_fc_layer_params=None,
-            output_fc_layer_params=self.q_fc_layers,
-            lstm_size=(32,)
-        )
-        q_net = q_rnn_network.QRnnNetwork(
-            input_tensor_spec=self.observation_tensor_spec,
-            action_spec=self.action_tensor_spec,
-            input_fc_layer_params=self.q_fc_layers,
-            output_fc_layer_params=self.q_fc_layers,
-            lstm_size=(32,)
-        )
-        # q_net = q_network.QNetwork (
+        # q_net = q_rnn_network.QRnnNetwork(
         #     input_tensor_spec=self.observation_tensor_spec,
         #     action_spec=self.action_tensor_spec,
-        #     fc_layer_params=self.q_fc_layers,
-        #     batch_squash=False
+        #     input_fc_layer_params=None,
+        #     output_fc_layer_params=self.q_fc_layers,
+        #     lstm_size=(32,)
         # )
+        q_net = q_rnn_network.QRnnNetwork(
+            input_tensor_spec=self.observation_tensor_spec,
+            action_spec=self.action_tensor_spec,
+            # input_fc_layer_params=None,
+            # input_fc_layer_params=self.q_fc_layers,
+            # input_fc_layer_params=(8,16,8,4,8,16,32),
+            input_fc_layer_params=(8,16),
+            # input_fc_layer_params=(8,4,8),
+            # output_fc_layer_params=self.q_fc_layers,
+            output_fc_layer_params=(32,16,8),
+            # output_fc_layer_params=(8,16,16,8,4),
+            lstm_size=(32,)
+        )
         return q_net
 
     def createOptimizer(self):
         learning_rate = 3e-4
+        # learning_rate = 3e-5
+        # learning_rate = 1e-3
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         return optimizer
 
@@ -155,7 +157,8 @@ class Agent:
     def createBufferIterator(self):
         dataset = self.replay_buffer.as_dataset(
             num_parallel_calls=3,
-            sample_batch_size=2
+            sample_batch_size=50,
+            num_steps=self.num_steps
         ).prefetch(self.batch_size)
         iterator = iter(dataset)
         return iterator
@@ -163,8 +166,7 @@ class Agent:
     def train(self, global_step):
         if not (self.replay_buffer.num_frames().numpy() % (self.num_steps * self.batch_size)):
             experience, unused_info = next(self.iterator)
-            # print('Experience: {}\n'.format(experience))
-            experience = tf.nest.map_structure(lambda t: tf.expand_dims(t, 0), experience)
+            # experience = tf.nest.map_structure(lambda t: tf.expand_dims(t, 0), experience)
             self._loss, _ = self.q_agent.train(experience)
 
             with open(AGENT_FILE, mode='a+', newline='') as agentLog:
@@ -190,7 +192,6 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
         self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
-        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=6, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
@@ -208,8 +209,11 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._max_cDELAY = 2000
         self._max_cTIMEP = 2000
         self._avg_thpt = 0
+        self._avg_cDELAY = 0
+        self._avg_cTIMEP = 0
         self._window_time = 2000
         self._max_thpt = 0
+
 
 
     def action_spec(self):
@@ -248,9 +252,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        reward = self.reward_alpha(observation)
+        # reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
         # reward = self.reward_gamma(observation)
+        reward = self.reward_function2(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -399,6 +404,53 @@ class MqEnvironment(py_environment.PyEnvironment):
 
         return reward
 
+    def reward_function2(self, observation):
+        try:
+            thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, qosbase = observation.numpy()
+            if any(np.isnan(observation.numpy())) or any(np.isinf(observation.numpy())):
+                raise ValueError("Observation contains NaN or inf values")
+
+            reward = 0.0
+            delay_penalty = 0.0
+            processing_penalty = 0.0
+            thpt_reward = 0.0
+
+            self._avg_cDELAY = (self._avg_cDELAY + cDELAY) / 2
+            self._avg_cTIMEP = (self._avg_cTIMEP + cTIMEP) / 2
+
+            if self._avg_cDELAY < self._window_time * 2:
+                delay_penalty = 0.0
+            else:
+                # delay_penalty = np.clip((cDELAY - self._window_time)**3 / self._window_time, 0.0, 1.0)
+                delay_penalty = np.clip((self._avg_cDELAY - (2 * self._window_time))**2 / 36_000_000, 0.0, 1.0)
+
+            if self._avg_cTIMEP < self._window_time * 1.1:
+                processing_penalty = 0.0
+            else:
+                processing_penalty = np.clip((self._avg_cTIMEP - 1.1 * self._window_time) / 800, 0.0, 1.0)
+
+            if thpt_glo <= self._avg_thpt:
+                thpt_reward = 0.0
+            else:
+                thpt_reward = np.clip((thpt_glo - self._avg_thpt) / self._avg_thpt, 0.0, 1.0)
+
+            self._avg_thpt = (self._avg_thpt + (0.5 * thpt_glo)) / 2.0
+
+            reward = thpt_reward - (delay_penalty + processing_penalty)
+            reward = np.round(reward * 1000.0) / 1000.0
+            reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+
+            if np.isnan(reward) or np.isinf(reward):
+                raise ValueError("Reward calculation resulted in NaN or inf values")
+
+            return reward
+
+        except Exception as e:
+            # Handle and log the error
+            tf.print("Error in reward function:", e)
+            return 0.0
+
+
 
 class PPOAgentMQ:
     def __init__(self, start_state, upper_limit, lower_limit):
@@ -409,9 +461,9 @@ class PPOAgentMQ:
         self.maxqos = upper_limit
 
         self._last_state = self.env.reset()
-        print('NO Expand: {}\n'.format(self._last_state))
+        # print('NO Expand: {}\n'.format(self._last_state))
         time_step = tf.nest.map_structure(lambda x: tf.expand_dims(x, 0), self.env.reset())
-        print('With Expand: {}\n'.format(time_step))
+        # print('With Expand: {}\n'.format(time_step))
         self._last_action = self.agent.getAction(time_step)
         self._last_action = self._last_action
 
@@ -466,7 +518,11 @@ cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
     for i in range(8):
         state.append(start_state[i])
     
-    return PPOAgentMQ(state, qosmax, qosmin)
+    # return PPOAgentMQ(state, qosmax, qosmin)
+    agent = PPOAgentMQ(state, qosmax, qosmin)
+    action = agent.step(state)
+
+    return agent
 
 cdef public int infer(object agent , float* observation):
     state = []

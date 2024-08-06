@@ -93,32 +93,17 @@ class Agent:
             writer.writerow(['step', 'StepCounter', 'Loss'])
 
     def createQNet(self):
-        # q_net = q_rnn_network.QRnnNetwork(
-        #     input_tensor_spec=self.observation_tensor_spec,
-        #     action_spec=self.action_tensor_spec,
-        #     input_fc_layer_params=None,
-        #     output_fc_layer_params=self.q_fc_layers,
-        #     lstm_size=(32,)
-        # )
         q_net = q_rnn_network.QRnnNetwork(
             input_tensor_spec=self.observation_tensor_spec,
             action_spec=self.action_tensor_spec,
-            # input_fc_layer_params=None,
-            # input_fc_layer_params=self.q_fc_layers,
-            # input_fc_layer_params=(8,16,8,4,8,16,32),
-            input_fc_layer_params=(8,16),
-            # input_fc_layer_params=(8,4,8),
-            # output_fc_layer_params=self.q_fc_layers,
-            output_fc_layer_params=(32,16,8),
-            # output_fc_layer_params=(8,16,16,8,4),
+            input_fc_layer_params=None,
+            output_fc_layer_params=self.q_fc_layers,
             lstm_size=(32,)
         )
         return q_net
 
     def createOptimizer(self):
         learning_rate = 3e-4
-        # learning_rate = 3e-5
-        # learning_rate = 1e-3
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         return optimizer
 
@@ -418,16 +403,20 @@ class MqEnvironment(py_environment.PyEnvironment):
             self._avg_cDELAY = (self._avg_cDELAY + cDELAY) / 2
             self._avg_cTIMEP = (self._avg_cTIMEP + cTIMEP) / 2
 
-            if self._avg_cDELAY < self._window_time * 2:
+            if self._avg_cDELAY <= self._window_time * 2:
                 delay_penalty = 0.0
+                if self._avg_cDELAY < self._window_time*0.7:
+                    processing_penalty = -2.0
             else:
                 # delay_penalty = np.clip((cDELAY - self._window_time)**3 / self._window_time, 0.0, 1.0)
-                delay_penalty = np.clip((self._avg_cDELAY - (2 * self._window_time))**2 / 36_000_000, 0.0, 1.0)
+                delay_penalty = np.clip((self._avg_cDELAY - (2 * self._window_time))**2 / 36_000_000, 0.0, 1.0) * -1
 
             if self._avg_cTIMEP < self._window_time * 1.1:
                 processing_penalty = 0.0
+                if self._avg_cTIMEP < self._window_time*0.7:
+                    processing_penalty = -1.0
             else:
-                processing_penalty = np.clip((self._avg_cTIMEP - 1.1 * self._window_time) / 800, 0.0, 1.0)
+                processing_penalty = np.clip((self._avg_cTIMEP - 1.1 * self._window_time) / 800, 0.0, 1.0) * -1
 
             if thpt_glo <= self._avg_thpt:
                 thpt_reward = 0.0
@@ -436,7 +425,7 @@ class MqEnvironment(py_environment.PyEnvironment):
 
             self._avg_thpt = (self._avg_thpt + (0.5 * thpt_glo)) / 2.0
 
-            reward = thpt_reward - (delay_penalty + processing_penalty)
+            reward = thpt_reward + (delay_penalty + processing_penalty)
             reward = np.round(reward * 1000.0) / 1000.0
             reward = np.clip(reward, a_min=-1.0, a_max=1.0)
 

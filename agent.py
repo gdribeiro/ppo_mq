@@ -13,15 +13,19 @@ import tensorflow_probability as tfp
 from tf_agents.specs import tensor_spec
 from tf_agents.specs import array_spec
 from tf_agents.specs import BoundedTensorSpec
+from tf_agents.specs import ArraySpec
 from tf_agents.specs import TensorSpec
 from tf_agents.trajectories import time_step as ts
 from tf_agents.environments import tf_py_environment
 
 from tf_agents.agents.dqn import dqn_agent
-from tf_agents.networks import q_network
+from tf_agents.agents.ddpg import ddpg_agent
+from tf_agents.agents.ddpg import actor_rnn_network
+from tf_agents.agents.ddpg import critic_rnn_network
 from tf_agents.networks import q_rnn_network
+from tf_agents.networks.actor_distribution_rnn_network import ActorDistributionRnnNetwork
+from tf_agents.networks.value_rnn_network import ValueRnnNetwork
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
-from tf_agents.replay_buffers import py_uniform_replay_buffer
 from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 from tf_agents.environments import py_environment
@@ -69,13 +73,15 @@ class Agent:
 
         self.time_step_tensor_spec = tensor_spec.from_spec(env.time_step_spec())
         self.observation_tensor_spec = tensor_spec.from_spec(env.observation_spec())
+        
         self.action_tensor_spec = tensor_spec.from_spec(env.action_spec())
 
-        self.q_net = self.createQNet()
+        self.actor_net = self.actor_net()
+        self.critic_net = self.critic_net()
         self.optimizer = self.createOptimizer()
         self.train_step_counter = tf.Variable(0)
 
-        self.q_agent = self.createQAgent()
+        self.q_agent = self.createDDPG()
 
         self.batch_size = GLOBAL_BATCH
         self.num_steps = GLOBAL_STEPS
@@ -92,28 +98,26 @@ class Agent:
             writer = csv.writer(agentLog)
             writer.writerow(['step', 'StepCounter', 'Loss'])
 
-    def createQNet(self):
-        q_net = q_rnn_network.QRnnNetwork(
-            input_tensor_spec=self.observation_tensor_spec,
-            action_spec=self.action_tensor_spec,
-            input_fc_layer_params=None,
-            output_fc_layer_params=self.q_fc_layers,
-            lstm_size=(32,)
+    def actor_net(self):
+        actor_net = ActorDistributionRnnNetwork(
+            input_tensor_spec= self.observation_tensor_spec,
+            output_tensor_spec=self.action_tensor_spec,
+            input_fc_layer_params=(64,64),
+            lstm_size=(64,),
+            output_fc_layer_params=(64,64,64),
+            name='CriticRnnNetwork'
         )
-        q_net = q_rnn_network.QRnnNetwork(
-            input_tensor_spec=self.observation_tensor_spec,
-            action_spec=self.action_tensor_spec,
-            # input_fc_layer_params=None,
-            # input_fc_layer_params=self.q_fc_layers,
-            # input_fc_layer_params=(8,16,8,4,8,16,32),
-            # input_fc_layer_params=(8,4,4,8,16,32),
-            input_fc_layer_params=(8,4,8),
-            # output_fc_layer_params=self.q_fc_layers,
-            # output_fc_layer_params=(32,16,16,8,4),
-            output_fc_layer_params=(8,16,16,8,4),
-            lstm_size=(32,)
+        return actor_net
+    
+    def critic_net(self):
+        critic_net = ValueRnnNetwork(
+            input_tensor_spec= self.observation_tensor_spec,
+            input_fc_layer_params=(64,64),
+            lstm_size=(64,),
+            output_fc_layer_params=(64,64,64),
+            name='DDPGCritic'
         )
-        return q_net
+        return critic_net
 
     def createOptimizer(self):
         learning_rate = 3e-4
@@ -122,22 +126,26 @@ class Agent:
         optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
         return optimizer
 
-    def createQAgent(self):
-        print('TimeStepSpec: {}\n'.format(self.time_step_tensor_spec))
-        q_agent = dqn_agent.DqnAgent(
+    def createDDPG(self):
+        agent = ddpg_agent.DdpgAgent(
             time_step_spec=self.time_step_tensor_spec,
             action_spec=self.action_tensor_spec,
-            q_network=self.q_net,
-            optimizer=self.optimizer,
-            td_errors_loss_fn=common.element_wise_squared_loss,
-            train_step_counter=self.train_step_counter
+            actor_network= self.actor_net,
+            critic_network= self.critic_net,
+            actor_optimizer= self.optimizer,
+            ou_stddev=None,
+            ou_damping=None,
+            critic_optimizer= self.optimizer,
+            gamma= self.gamma,
+            train_step_counter= self.train_step_counter,
+            name= 'DDPGMQ'
         )
-        q_agent.initialize()
-        print('Q Network: {}\n'.format(q_agent._q_network.summary()))
+        agent.initialize()
+        # print('Q Network: {}\n'.format(agent._actor_network.summary()))
         # Optimazation: Disable/Ebable Autograph
         # q_agent.train = common.function(q_agent.train, autograph=False)
-        q_agent.train_step_counter.assign(0)
-        return q_agent
+        agent.train_step_counter.assign(0)
+        return agent
 
     def createReplayBuffer(self):
         replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
@@ -189,11 +197,14 @@ class MqEnvironment(py_environment.PyEnvironment):
 
     def __init__(self, maxqos, minqos):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
+        # self._observation_spec = ArraySpec(shape=(8,), dtype=np.float32, name='observation')
 
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
-        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
+        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=6, name='action')
+        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.float32, minimum=0, maximum=2, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
+        # self._reward_spec = ArraySpec(shape=(), dtype=np.float32, name='reward')
         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
 
         self._maxqos = maxqos

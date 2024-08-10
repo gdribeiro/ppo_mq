@@ -237,10 +237,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        # reward = self.reward_alpha(observation)
+        reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
         # reward = self.reward_gamma(observation)
-        reward = self.reward_function2(observation)
+        # reward = self.reward_function2(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))

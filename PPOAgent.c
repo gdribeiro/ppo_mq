@@ -2493,6 +2493,7 @@ static PyObject *__pyx_int_2000;
 static PyObject *__pyx_int_2400;
 static PyObject *__pyx_int_10000;
 static PyObject *__pyx_int_20000;
+static PyObject *__pyx_int_neg_1;
 static PyObject *__pyx_int_neg_10;
 static PyObject *__pyx_tuple_;
 static PyObject *__pyx_tuple__2;
@@ -6226,7 +6227,7 @@ static PyObject *__pyx_pf_8PPOAgent_13MqEnvironment___init__(CYTHON_UNUSED PyObj
  *     def __init__(self, maxqos, minqos):
  *         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')             # <<<<<<<<<<<<<<
  *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
- *         self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
+ *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
  */
   __Pyx_GetModuleGlobalName(__pyx_t_1, __pyx_n_s_TensorSpec); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 216, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
@@ -6248,37 +6249,37 @@ static PyObject *__pyx_pf_8PPOAgent_13MqEnvironment___init__(CYTHON_UNUSED PyObj
   if (__Pyx_PyObject_SetAttrStr(__pyx_v_self, __pyx_n_s_observation_spec_2, __pyx_t_4) < 0) __PYX_ERR(0, 216, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
 
-  /* "PPOAgent.pyx":218
- *         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
+  /* "PPOAgent.pyx":219
  *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
- *         self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')             # <<<<<<<<<<<<<<
- *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
+ *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
+ *         self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')             # <<<<<<<<<<<<<<
  *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=6, name='action')
+ *         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
  */
-  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_n_s_BoundedTensorSpec); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 218, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_4, __pyx_n_s_BoundedTensorSpec); if (unlikely(!__pyx_t_4)) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_4);
-  __pyx_t_2 = __Pyx_PyDict_NewPresized(5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 218, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyDict_NewPresized(5); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_shape, __pyx_empty_tuple) < 0) __PYX_ERR(0, 218, __pyx_L1_error)
-  __Pyx_GetModuleGlobalName(__pyx_t_1, __pyx_n_s_tf); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 218, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_shape, __pyx_empty_tuple) < 0) __PYX_ERR(0, 219, __pyx_L1_error)
+  __Pyx_GetModuleGlobalName(__pyx_t_1, __pyx_n_s_tf); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
-  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_int32); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 218, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_1, __pyx_n_s_int32); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_dtype, __pyx_t_3) < 0) __PYX_ERR(0, 218, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_dtype, __pyx_t_3) < 0) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
-  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_minimum, __pyx_int_0) < 0) __PYX_ERR(0, 218, __pyx_L1_error)
-  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_maximum, __pyx_int_2) < 0) __PYX_ERR(0, 218, __pyx_L1_error)
-  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_name, __pyx_n_u_action) < 0) __PYX_ERR(0, 218, __pyx_L1_error)
-  __pyx_t_3 = __Pyx_PyObject_Call(__pyx_t_4, __pyx_empty_tuple, __pyx_t_2); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 218, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_minimum, __pyx_int_0) < 0) __PYX_ERR(0, 219, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_maximum, __pyx_int_1) < 0) __PYX_ERR(0, 219, __pyx_L1_error)
+  if (PyDict_SetItem(__pyx_t_2, __pyx_n_s_name, __pyx_n_u_action) < 0) __PYX_ERR(0, 219, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyObject_Call(__pyx_t_4, __pyx_empty_tuple, __pyx_t_2); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __Pyx_DECREF(__pyx_t_4); __pyx_t_4 = 0;
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  if (__Pyx_PyObject_SetAttrStr(__pyx_v_self, __pyx_n_s_action_spec_2, __pyx_t_3) < 0) __PYX_ERR(0, 218, __pyx_L1_error)
+  if (__Pyx_PyObject_SetAttrStr(__pyx_v_self, __pyx_n_s_action_spec_2, __pyx_t_3) < 0) __PYX_ERR(0, 219, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
 
   /* "PPOAgent.pyx":221
- *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
+ *         self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
  *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=6, name='action')
  *         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')             # <<<<<<<<<<<<<<
  *         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
@@ -12604,6 +12605,7 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOAgentMQ_2step(CYTHON_UNUSED PyObject *_
   PyObject *__pyx_t_5 = NULL;
   int __pyx_t_6;
   PyObject *__pyx_t_7 = NULL;
+  int __pyx_t_8;
   int __pyx_lineno = 0;
   const char *__pyx_filename = NULL;
   int __pyx_clineno = 0;
@@ -13021,19 +13023,19 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOAgentMQ_2step(CYTHON_UNUSED PyObject *_
   if (__Pyx_PyObject_SetAttrStr(__pyx_v_self, __pyx_n_s_last_action_2, __pyx_t_1) < 0) __PYX_ERR(0, 462, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
 
-  /* "PPOAgent.pyx":465
- * 
+  /* "PPOAgent.pyx":466
  *         # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
- *         action = self._last_action.action.numpy() - 1             # <<<<<<<<<<<<<<
- *         # action = self._last_action.action.numpy()
- *         # if action < 1:
+ *         # action = self._last_action.action.numpy() - 1
+ *         action = self._last_action.action.numpy()             # <<<<<<<<<<<<<<
+ *         if action < 1:
+ *             action = -1
  */
-  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_v_self, __pyx_n_s_last_action_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 465, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_v_self, __pyx_n_s_last_action_2); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 466, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
-  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_2, __pyx_n_s_action); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 465, __pyx_L1_error)
+  __pyx_t_3 = __Pyx_PyObject_GetAttrStr(__pyx_t_2, __pyx_n_s_action); if (unlikely(!__pyx_t_3)) __PYX_ERR(0, 466, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_3);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_3, __pyx_n_s_numpy); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 465, __pyx_L1_error)
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_t_3, __pyx_n_s_numpy); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 466, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_3); __pyx_t_3 = 0;
   __pyx_t_3 = NULL;
@@ -13048,43 +13050,71 @@ static PyObject *__pyx_pf_8PPOAgent_10PPOAgentMQ_2step(CYTHON_UNUSED PyObject *_
   }
   __pyx_t_1 = (__pyx_t_3) ? __Pyx_PyObject_CallOneArg(__pyx_t_2, __pyx_t_3) : __Pyx_PyObject_CallNoArg(__pyx_t_2);
   __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 465, __pyx_L1_error)
+  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 466, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
-  __pyx_t_2 = __Pyx_PyInt_SubtractObjC(__pyx_t_1, __pyx_int_1, 1, 0, 0); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 465, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_2);
+  __pyx_v_action = __pyx_t_1;
+  __pyx_t_1 = 0;
+
+  /* "PPOAgent.pyx":467
+ *         # action = self._last_action.action.numpy() - 1
+ *         action = self._last_action.action.numpy()
+ *         if action < 1:             # <<<<<<<<<<<<<<
+ *             action = -1
+ * 
+ */
+  __pyx_t_1 = PyObject_RichCompare(__pyx_v_action, __pyx_int_1, Py_LT); __Pyx_XGOTREF(__pyx_t_1); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 467, __pyx_L1_error)
+  __pyx_t_8 = __Pyx_PyObject_IsTrue(__pyx_t_1); if (unlikely(__pyx_t_8 < 0)) __PYX_ERR(0, 467, __pyx_L1_error)
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-  __pyx_v_action = __pyx_t_2;
-  __pyx_t_2 = 0;
+  if (__pyx_t_8) {
+
+    /* "PPOAgent.pyx":468
+ *         action = self._last_action.action.numpy()
+ *         if action < 1:
+ *             action = -1             # <<<<<<<<<<<<<<
+ * 
+ *         print('Action: {}'.format(action))
+ */
+    __Pyx_INCREF(__pyx_int_neg_1);
+    __Pyx_DECREF_SET(__pyx_v_action, __pyx_int_neg_1);
+
+    /* "PPOAgent.pyx":467
+ *         # action = self._last_action.action.numpy() - 1
+ *         action = self._last_action.action.numpy()
+ *         if action < 1:             # <<<<<<<<<<<<<<
+ *             action = -1
+ * 
+ */
+  }
 
   /* "PPOAgent.pyx":470
- *         #     action = -1
+ *             action = -1
  * 
  *         print('Action: {}'.format(action))             # <<<<<<<<<<<<<<
  * 
  *         return action
  */
-  __pyx_t_1 = __Pyx_PyObject_GetAttrStr(__pyx_kp_u_Action, __pyx_n_s_format); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 470, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_1);
+  __pyx_t_2 = __Pyx_PyObject_GetAttrStr(__pyx_kp_u_Action, __pyx_n_s_format); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 470, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
   __pyx_t_3 = NULL;
-  if (CYTHON_UNPACK_METHODS && likely(PyMethod_Check(__pyx_t_1))) {
-    __pyx_t_3 = PyMethod_GET_SELF(__pyx_t_1);
+  if (CYTHON_UNPACK_METHODS && likely(PyMethod_Check(__pyx_t_2))) {
+    __pyx_t_3 = PyMethod_GET_SELF(__pyx_t_2);
     if (likely(__pyx_t_3)) {
-      PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_1);
+      PyObject* function = PyMethod_GET_FUNCTION(__pyx_t_2);
       __Pyx_INCREF(__pyx_t_3);
       __Pyx_INCREF(function);
-      __Pyx_DECREF_SET(__pyx_t_1, function);
+      __Pyx_DECREF_SET(__pyx_t_2, function);
     }
   }
-  __pyx_t_2 = (__pyx_t_3) ? __Pyx_PyObject_Call2Args(__pyx_t_1, __pyx_t_3, __pyx_v_action) : __Pyx_PyObject_CallOneArg(__pyx_t_1, __pyx_v_action);
+  __pyx_t_1 = (__pyx_t_3) ? __Pyx_PyObject_Call2Args(__pyx_t_2, __pyx_t_3, __pyx_v_action) : __Pyx_PyObject_CallOneArg(__pyx_t_2, __pyx_v_action);
   __Pyx_XDECREF(__pyx_t_3); __pyx_t_3 = 0;
-  if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 470, __pyx_L1_error)
-  __Pyx_GOTREF(__pyx_t_2);
-  __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
-  __pyx_t_1 = __Pyx_PyObject_CallOneArg(__pyx_builtin_print, __pyx_t_2); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 470, __pyx_L1_error)
+  if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 470, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
   __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
+  __pyx_t_2 = __Pyx_PyObject_CallOneArg(__pyx_builtin_print, __pyx_t_1); if (unlikely(!__pyx_t_2)) __PYX_ERR(0, 470, __pyx_L1_error)
+  __Pyx_GOTREF(__pyx_t_2);
   __Pyx_DECREF(__pyx_t_1); __pyx_t_1 = 0;
+  __Pyx_DECREF(__pyx_t_2); __pyx_t_2 = 0;
 
   /* "PPOAgent.pyx":472
  *         print('Action: {}'.format(action))
@@ -14945,7 +14975,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitCachedConstants(void) {
  *     def __init__(self, maxqos, minqos):
  *         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')             # <<<<<<<<<<<<<<
  *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
- *         self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
+ *         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
  */
   __pyx_tuple__5 = PyTuple_Pack(1, __pyx_int_8); if (unlikely(!__pyx_tuple__5)) __PYX_ERR(0, 216, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_tuple__5);
@@ -15353,6 +15383,7 @@ static CYTHON_SMALL_CODE int __Pyx_InitGlobals(void) {
   __pyx_int_2400 = PyInt_FromLong(2400); if (unlikely(!__pyx_int_2400)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_10000 = PyInt_FromLong(10000L); if (unlikely(!__pyx_int_10000)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_20000 = PyInt_FromLong(20000L); if (unlikely(!__pyx_int_20000)) __PYX_ERR(0, 1, __pyx_L1_error)
+  __pyx_int_neg_1 = PyInt_FromLong(-1); if (unlikely(!__pyx_int_neg_1)) __PYX_ERR(0, 1, __pyx_L1_error)
   __pyx_int_neg_10 = PyInt_FromLong(-10); if (unlikely(!__pyx_int_neg_10)) __PYX_ERR(0, 1, __pyx_L1_error)
   return 0;
   __pyx_L1_error:;

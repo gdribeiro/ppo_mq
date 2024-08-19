@@ -215,8 +215,8 @@ class MqEnvironment(py_environment.PyEnvironment):
     def __init__(self, maxqos, minqos):
         self._observation_spec = TensorSpec(shape=(8,), dtype=tf.float32, name='observation')
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=minqos, maximum=maxqos, name='action')
-        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
-        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
+        # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=2, name='action')
+        self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=1, name='action')
         # self._action_spec = BoundedTensorSpec(shape=(), dtype=tf.int32, minimum=0, maximum=6, name='action')
         self._reward_spec = TensorSpec(shape=(), dtype=tf.float32, name='reward')
         self._discount_spec = TensorSpec(shape=(), dtype=tf.float32, name='discount')
@@ -462,10 +462,10 @@ class PPOAgentMQ:
         self._last_action = tf.nest.map_structure(lambda x: tf.squeeze(x, axis=[0]), tmp_action)
 
         # # Return action -1 because the actions are mapped to 0,1,2 need to -> -1, 0, 1
-        action = self._last_action.action.numpy() - 1
-        # action = self._last_action.action.numpy()
-        # if action < 1:
-        #     action = -1
+        # action = self._last_action.action.numpy() - 1
+        action = self._last_action.action.numpy()
+        if action < 1:
+            action = -1
         
         print('Action: {}'.format(action))
 

@@ -490,8 +490,12 @@ cdef public object createPPOAgent(float* start_state, int qosmin, int qosmax):
     state = []
     for i in range(8):
         state.append(start_state[i])
-    
-    return PPOAgentMQ(state, qosmax, qosmin)
+
+    # return PPOAgentMQ(state, qosmax, qosmin)
+    agent = PPOAgentMQ(state, qosmax, qosmin)
+    action = agent.step(state)
+
+    return agent
 
 cdef public int infer(object agent , float* observation):
     state = []

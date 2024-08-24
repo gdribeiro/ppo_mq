@@ -237,6 +237,10 @@ class MqEnvironment(py_environment.PyEnvironment):
         self._avg_thpt = 0
         self._window_time = 2000
         self._max_thpt = 0
+        self._avg_cDELAY = 0
+        self._avg_cTIMEP = 0
+
+
 
 
     def action_spec(self):
@@ -278,6 +282,8 @@ class MqEnvironment(py_environment.PyEnvironment):
         reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
         # reward = self.reward_gamma(observation)
+        # reward = self.reward_function2(observation)
+        # reward = self.reward_gamma2(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -318,6 +324,34 @@ class MqEnvironment(py_environment.PyEnvironment):
 
 
         self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
+
+        reward = np.round(reward * 1000) / 1000
+        reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+        return reward
+
+    def reward_gamma2(self, observation): # Opotimization vars: thpt_glo,  cDELAY, cTIMEP, state
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, qosbase = observation.numpy()
+        lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_qosbase = self.current_time_step().observation.numpy()
+
+        # keep alive if other rewards don't apply
+        reward = 0.0001
+
+        if (cDELAY > self._window_time * 4) or cTIMEP > (self._window_time * 2):
+            # Reward to lower the memory usage
+            reward = self.r_state_lin_norm_cost(state)
+            if cTIMEP > self._window_time * 2:
+                reward = -1.0
+            elif cDELAY > self._window_time * 4:
+                reward = -1.0
+        elif cDELAY <= lst_cDELAY and qosbase < state:
+        # qosbse < state means data will be processed and delay will decrease
+            reward = 1.0
+        else:
+            if thpt_glo > self._avg_thpt:
+                reward = 1.0
+
+
+        self._avg_thpt = (self._avg_thpt + thpt_glo) / 2.0
 
         reward = np.round(reward * 1000) / 1000
         reward = np.clip(reward, a_min=-1.0, a_max=1.0)
@@ -425,6 +459,64 @@ class MqEnvironment(py_environment.PyEnvironment):
         reward =  100 * (thpt_normalized + state_normalized + cDELAY_normalized)
 
         return reward
+
+    def reward_function2(self, observation):
+        try:
+            thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, qosbase = observation.numpy()
+            if any(np.isnan(observation.numpy())) or any(np.isinf(observation.numpy())):
+                raise ValueError("Observation contains NaN or inf values")
+
+            reward = 0.0
+            delay_penalty = 0.0
+            processing_penalty = 0.0
+            thpt_reward = 0.0
+
+            self._avg_cDELAY = (self._avg_cDELAY + cDELAY) / 2
+            self._avg_cTIMEP = (self._avg_cTIMEP + cTIMEP) / 2
+
+            if self._avg_cDELAY <= self._window_time * 2:
+                delay_penalty = 0.0
+                if self._avg_cDELAY < self._window_time*0.7:
+                    processing_penalty = -2.0
+            else:
+                # delay_penalty = np.clip((cDELAY - self._window_time)**3 / self._window_time, 0.0, 1.0)
+                delay_penalty = np.clip((self._avg_cDELAY - (2 * self._window_time))**2 / 36_000_000, 0.0, 1.0) * -1
+
+            if self._avg_cTIMEP < self._window_time * 1.1:
+                processing_penalty = 0.0
+                if self._avg_cTIMEP < self._window_time*0.7:
+                    processing_penalty = -1.0
+            else:
+                processing_penalty = np.clip((self._avg_cTIMEP - 1.1 * self._window_time) / 800, 0.0, 1.0) * -1
+
+            if thpt_glo <= self._avg_thpt:
+                thpt_reward = 0.0
+            else:
+                thpt_reward = np.clip((thpt_glo - self._avg_thpt) / self._avg_thpt, 0.0, 1.0)
+
+            self._avg_thpt = (self._avg_thpt + (0.5 * thpt_glo)) / 2.0
+
+            reward = thpt_reward + (delay_penalty + processing_penalty)
+            reward = thpt_reward
+
+            # only penalty if delay is too high
+            if self._avg_cDELAY > (4 * self._window_time):
+                reward = np.clip((self._avg_cDELAY - (2 * self._window_time))**2 / 36_000_000, 0.0, 1.0) * -1
+                reward = -1.0
+
+
+            reward = np.round(reward * 1000.0) / 1000.0
+            reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+
+            if np.isnan(reward) or np.isinf(reward):
+                raise ValueError("Reward calculation resulted in NaN or inf values")
+
+            return reward
+
+        except Exception as e:
+            # Handle and log the error
+            tf.print("Error in reward function:", e)
+            return 0.0
 
 
 class PPOAgentMQ:

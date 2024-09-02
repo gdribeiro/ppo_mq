@@ -238,10 +238,12 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        reward = self.reward_alpha(observation)
+        # reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
         # reward = self.reward_gamma(observation)
         # reward = self.reward_function2(observation)
+        # reward = self.reward_gamma2(observation)
+        reward = self.reward_alpha2(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -282,6 +284,28 @@ class MqEnvironment(py_environment.PyEnvironment):
 
 
         self._avg_thpt = (self._avg_thpt + thpt_glo) / 2
+
+        reward = np.round(reward * 1000) / 1000
+        reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+        return reward
+
+    def reward_gamma2(self, observation): # Opotimization vars: thpt_glo,  cDELAY, cTIMEP, state
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, qosbase = observation.numpy()
+        lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_qosbase = self.current_time_step().observation.numpy()
+
+        reward = 0.0
+
+        if (cDELAY > self._window_time * 4) or cTIMEP > (self._window_time * 2):
+            reward = -1.0
+        elif state < lst_state:
+            reward = 1.0
+        elif state < 8.0:
+            reward = -1.0
+        elif thpt_glo > self._avg_thpt:
+            reward = 1.0
+
+
+        self._avg_thpt = (self._avg_thpt + thpt_glo) / 2.0
 
         reward = np.round(reward * 1000) / 1000
         reward = np.clip(reward, a_min=-1.0, a_max=1.0)
@@ -350,6 +374,44 @@ class MqEnvironment(py_environment.PyEnvironment):
                 thpt_loss = False
 
         if (cDELAY > self._window_time and thpt_loss) or (state > self._maxqos) or (state > mem_use > self._minqos):
+            reward = -1.0
+        elif state >= mem_use:
+            if state > self._minqos:
+                reward = 1.0
+            elif state <= self._minqos:
+                reward = -1.0
+        elif state >= mem_use:
+            reward = -1.0
+            
+        if mem_use < self._minqos:
+            reward = -1.0
+        elif mem_use > self._maxqos:
+            reward = -1.0
+
+        if cTIMEP == 0.0:
+            reward = -1.0
+        
+        reward = np.round(reward * 10000) / 10000
+        reward = np.clip(reward, a_min=-1.0, a_max=1.0)
+        return reward
+
+    def reward_alpha2(self, observation): #  Optimization vars: thpt_glo, cDELAY, cTIMEP, state, mem_use
+        thpt_glo, thpt_var, cDELAY, cTIMEP, RecSparkTotal, RecMQTotal, state, mem_use = observation.numpy()
+        reward = -1.0
+        thpt_loss = False
+
+        if thpt_glo >= self._max_thpt:
+            self._max_thpt = (thpt_glo + thpt_glo) / 2.0
+            thpt_loss = False
+        else:
+            measure = self._max_thpt - thpt_glo
+            if measure / self._max_thpt > 0.05:  # decrease is greater than 5%
+                thpt_loss = True
+                self._max_thpt = 0.0
+            else:
+                thpt_loss = False
+
+        if (cDELAY > self._window_time and thpt_loss) or (state > self._maxqos):
             reward = -1.0
         elif state >= mem_use:
             if state > self._minqos:

@@ -30,9 +30,6 @@ from tf_agents.metrics import tf_metrics
 from tf_agents.eval.metric_utils import log_metrics
 import timeit
 
-import reverb
-from tf_agents.replay_buffers import reverb_replay_buffer
-from tf_agents.replay_buffers import reverb_utils
 
 import csv
 
@@ -238,12 +235,12 @@ class MqEnvironment(py_environment.PyEnvironment):
         lst_thpt_glo, lst_thpt_var, lst_cDELAY, lst_cTIMEP, lst_RecSparkTotal, lst_RecMQTotal, lst_state, lst_mem_use = self.current_time_step().observation.numpy()
         r_thpt_glo, r_thpt_var, r_cDELAY, r_cTIMEP, r_RecSparkTotal, r_RecMQTotal, r_state, r_mem_use = np.zeros(8, dtype=np.float32)
 
-        # reward = self.reward_alpha(observation)
+        reward = self.reward_alpha(observation)
         # reward = self.reward_beta(observation)
         # reward = self.reward_gamma(observation)
         # reward = self.reward_function2(observation)
         # reward = self.reward_gamma2(observation)
-        reward = self.reward_alpha2(observation)
+        # reward = self.reward_alpha2(observation)
         
         self._rewards += reward
         print('** Reward: {}\n** Total Rewards: {}'.format(reward, self._rewards))
@@ -373,7 +370,7 @@ class MqEnvironment(py_environment.PyEnvironment):
             else:
                 thpt_loss = False
 
-        if (cDELAY > self._window_time and thpt_loss) or (state > self._maxqos) or (state > mem_use > self._minqos):
+        if (cDELAY > self._window_time and thpt_loss) #or (state > self._maxqos) or (state > mem_use > self._minqos):
             reward = -1.0
         elif state >= mem_use:
             if state > self._minqos:

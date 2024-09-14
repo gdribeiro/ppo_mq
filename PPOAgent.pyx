@@ -419,7 +419,7 @@ class MqEnvironment(py_environment.PyEnvironment):
             else:
                 thpt_loss = False
 
-        if (cDELAY > self._window_time and thpt_loss) or (state > self._maxqos) or (state > mem_use > self._minqos):
+        if (cDELAY > self._window_time and thpt_loss) #or (state > self._maxqos) or (state > mem_use > self._minqos):
             reward = -1.0
         elif state >= mem_use:
             if state > self._minqos:
